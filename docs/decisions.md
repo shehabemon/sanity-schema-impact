@@ -91,3 +91,21 @@ Short entries: context, choice, trade-off. Newest at the bottom.
 - **Context:** The schema extract is the input for the diff engine's tests. Ignoring it would make those tests depend on a local extract.
 - **Choice:** The file is committed. `fixtures/studio` is in `.prettierignore` and the ESLint `ignores`, so generated JSON isn't formatted or linted.
 - **Trade-off:** It must be regenerated when the Studio schema changes. A stale file would only be caught in review.
+
+## 16. Change-kind fixtures come from the CLI, one edit per pair
+
+- **Context:** The diff engine needs before/after pairs. Hand-written JSON would encode my guess at the extract format, which is what the spike was meant to replace.
+- **Choice:** Each `before.json` and `after.json` is real `sanity schema extract --enforce-required-fields --path` output from the fixture Studio, with one source edit per pair. `removed-type` removes `product`, which nothing references, so the pair has no side effects. `newly-required` uses `post.slug`, not `post.title`, because `title` is already required.
+- **Trade-off:** The pairs go stale when the fixture Studio changes, and each one is about 48 KB. A smaller hand-written schema would be easier to read but would not be what the CLI emits.
+
+## 17. Named types are expanded before diffing (proposed for phase 3)
+
+- **Context:** A change inside a registered named type appears only in that type's top-level entry, not under the field paths that use it. Field paths are `inline` references in the extract.
+- **Choice:** The normaliser resolves `inline` references before flattening, so a change inside a named type lands under every field path that uses it. Top-level named entries are not reported on their own, except when they're removed.
+- **Trade-off:** Flattened maps repeat named-type content under every field that uses it, so they get larger. The alternative is to diff named types separately and map changes back to fields, which is more code and more edge cases.
+
+## 18. Validation rules are left to the validation diff
+
+- **Context:** `min`, `max`, `regex`, `custom`, `deprecated`, `hidden`, `readOnly`, `initialValue` and `description` never appear in the extract. Only `required()` shows up, and only with `--enforce-required-fields`.
+- **Choice:** The structural diff doesn't try to detect them. Validation rules go to the validation diff. Studio-only options (`deprecated`, `hidden`, `readOnly`, `initialValue`, `description`) are not diffed at all, because they don't change what existing content means.
+- **Trade-off:** Adding `max(120)` to a title won't appear in the structural diff. It only shows up when the validation diff runs against the dataset.
