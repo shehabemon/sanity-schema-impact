@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 export type MigrationWriteOutcome = 'written' | 'exists';
@@ -26,4 +26,32 @@ export async function writeMigrationFile(
 
 function isErrno(error: unknown, code: string): boolean {
   return error instanceof Error && 'code' in error && error.code === code;
+}
+
+/** True when anything is at `path`. A symlink counts even when its target is missing. */
+export async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if (isErrno(error, 'ENOENT') || isErrno(error, 'ENOTDIR')) return false;
+    throw error;
+  }
+}
+
+/** Links `path` to `target` unless something is already at `path`. Returns whether it linked. */
+export async function linkIfAbsent(
+  target: string,
+  path: string,
+  type: 'dir' | 'file',
+): Promise<boolean> {
+  if (await pathExists(path)) return false;
+  await symlink(target, path, type);
+  return true;
+}
+
+/** Names of the entries in `dir` that aren't directories. */
+export async function fileNames(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  return entries.filter((entry) => !entry.isDirectory()).map((entry) => entry.name);
 }
