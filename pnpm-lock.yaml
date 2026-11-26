@@ -184,13 +184,14 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@sanity/client':
+        specifier: ^8.17.0
+        version: 8.17.0(vitest@5.1.2)
     devDependencies:
       '@faker-js/faker':
         specifier: ^10.6.0
         version: 10.6.0
-      '@sanity/client':
-        specifier: ^8.17.0
-        version: 8.17.0(vitest@5.1.2)
       '@types/node':
         specifier: ^22.20.7
         version: 22.20.7

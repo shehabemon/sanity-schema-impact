@@ -18,9 +18,11 @@
     "test:watch": "vitest",
     "seed": "tsx --env-file-if-exists=.env fixtures/seed.ts"
   },
+  "dependencies": {
+    "@sanity/client": "^8.17.0"
+  },
   "devDependencies": {
     "@faker-js/faker": "^10.6.0",
-    "@sanity/client": "^8.17.0",
     "@types/node": "^22.20.7",
     "@vitest/coverage-v8": "^5.1.2",
     "eslint": "^10.15.0",
