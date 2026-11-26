@@ -1,0 +1,20 @@
+{
+  "name": "sanity-schema-impact-fixture-studio",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "sanity dev",
+    "build": "sanity build",
+    "schema:extract": "sanity schema extract --enforce-required-fields"
+  },
+  "dependencies": {
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "sanity": "^6.25.0",
+    "styled-components": "^6.7.0"
+  }
+}
