@@ -12,6 +12,8 @@ export interface CliOptions {
   readonly skipValidation: boolean;
   readonly project?: string;
   readonly dataset?: string;
+  /** Set when migration scaffolds are wanted. Without `dir`, the Studio's own migrations folder is used. */
+  readonly migrations?: { readonly dir?: string };
 }
 
 export type ParsedArgs =
@@ -41,6 +43,8 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       'skip-validation': { type: 'boolean' },
       project: { type: 'string' },
       dataset: { type: 'string' },
+      migrations: { type: 'boolean' },
+      'migrations-dir': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' },
     },
@@ -56,6 +60,15 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
     throw new Error(`Unknown --format "${format}". Use table, md or json.`);
   }
 
+  const migrationsDir = values['migrations-dir'];
+  if (migrationsDir !== undefined && migrationsDir.trim() === '') {
+    throw new Error('--migrations-dir needs a directory.');
+  }
+  const migrations =
+    migrationsDir !== undefined || values.migrations === true
+      ? { ...(migrationsDir === undefined ? {} : { dir: migrationsDir }) }
+      : undefined;
+
   return {
     kind: 'run',
     options: {
@@ -66,6 +79,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       skipValidation: values['skip-validation'] === true,
       ...(values.project === undefined ? {} : { project: values.project }),
       ...(values.dataset === undefined ? {} : { dataset: values.dataset }),
+      ...(migrations === undefined ? {} : { migrations }),
     },
   };
 }

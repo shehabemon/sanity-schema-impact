@@ -1,5 +1,5 @@
 import { readFile, realpath } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { redact, runCommand, type CommandRunner } from '../adapters/process.js';
 import {
   createSanityReader,
@@ -13,7 +13,10 @@ import {
   type FetchLike,
   type PullRequestContext,
 } from '../github/comment.js';
+import { planScaffolds } from '../migrate/scaffold.js';
+import { writeScaffolds } from '../migrate/write.js';
 import { runPipeline } from '../pipeline.js';
+import { describeResult } from '../report/describe.js';
 import { toJson } from '../report/json.js';
 import { toMarkdown } from '../report/markdown.js';
 import type { Report } from '../report/model.js';
@@ -60,6 +63,8 @@ Options:
   --skip-validation     Skip the validation diff
   --project <id>        Sanity project ID (default: SANITY_STUDIO_PROJECT_ID)
   --dataset <name>      Dataset name (default: SANITY_STUDIO_DATASET)
+  --migrations          Write migration scaffolds to <studio>/migrations
+  --migrations-dir <dir> Write migration scaffolds to <dir> (turns --migrations on)
   -h, --help            Show this help
   -v, --version         Show the version
 
@@ -142,6 +147,13 @@ export async function runCli(argv: readonly string[], deps: RunDeps): Promise<nu
       cleanup,
     });
     deps.stdout.write(render(report, options.format, deps));
+    if (options.migrations !== undefined) {
+      const root =
+        options.migrations.dir === undefined
+          ? join(studioDir, 'migrations')
+          : resolve(deps.cwd, options.migrations.dir);
+      await reportScaffolds(report, root, deps);
+    }
     return report.failures.length > 0 ? 1 : 0;
   } catch (error) {
     deps.stderr.write(`${redact(errorText(error), [token])}\n`);
@@ -211,6 +223,21 @@ async function runComment(file: string, deps: RunDeps): Promise<number> {
   } catch (error) {
     deps.stderr.write(`${redact(errorText(error), [token])}\n`);
     return 2;
+  }
+}
+
+/** Writes the migration scaffolds. Progress goes to stderr, so stdout stays the report. */
+async function reportScaffolds(report: Report, root: string, deps: RunDeps): Promise<void> {
+  const plan = planScaffolds(report.changes);
+  const summary = await writeScaffolds(plan.scaffolds, root);
+  for (const slug of summary.existing) {
+    deps.stderr.write(`Skipped ${slug}: ${join(root, slug)} already exists.\n`);
+  }
+  const written = summary.written.length;
+  const noun = written === 1 ? 'scaffold' : 'scaffolds';
+  deps.stderr.write(`${String(written)} migration ${noun} written to ${root}.\n`);
+  for (const item of plan.notScaffolded) {
+    deps.stderr.write(`Not scaffolded: ${describeResult(item.result, 0)} (${item.reason}).\n`);
   }
 }
 

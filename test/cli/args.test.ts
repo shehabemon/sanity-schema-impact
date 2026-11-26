@@ -48,6 +48,33 @@ describe('parseCliArgs', () => {
     });
   });
 
+  it('leaves migration scaffolds off unless asked for', () => {
+    const parsed = parseCliArgs(['--studio', './studio']);
+
+    expect(parsed.kind === 'run' && 'migrations' in parsed.options).toBe(false);
+  });
+
+  it('writes scaffolds to the Studio when --migrations is given without a directory', () => {
+    const parsed = parseCliArgs(['--studio', './studio', '--migrations']);
+
+    expect(parsed).toMatchObject({ kind: 'run', options: { migrations: {} } });
+  });
+
+  it('writes scaffolds to the directory given with --migrations-dir', () => {
+    const parsed = parseCliArgs(['--studio', './studio', '--migrations-dir', 'out/migrations']);
+
+    expect(parsed).toMatchObject({
+      kind: 'run',
+      options: { migrations: { dir: 'out/migrations' } },
+    });
+  });
+
+  it('refuses an empty --migrations-dir', () => {
+    expect(() => parseCliArgs(['--studio', './studio', '--migrations-dir', ''])).toThrow(
+      '--migrations-dir needs a directory.',
+    );
+  });
+
   it('requires the Studio directory', () => {
     expect(() => parseCliArgs(['--base', 'main'])).toThrow('Missing --studio <dir>.');
   });
