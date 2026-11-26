@@ -242,3 +242,15 @@ Short entries: context, choice, trade-off. Newest at the bottom.
 - **Context:** A change with an unsafe path, or a required flag on an array member, has no count query. Throwing would stop the whole PR check for one change.
 - **Choice:** `measureImpact` returns `{ change, skipped }` for those. Errors from the reader propagate, so an expired token or a network failure stops the run instead of looking like zero impact.
 - **Trade-off:** A skipped change only shows up in the report. The report layer has to show skips, or they are invisible.
+
+## 41. Marker identity for the validation diff
+
+- **Context:** The CLI's ndjson output has no stable order between runs, `revision` changes with every document edit, and `details` carries values such as `actualLength` that change with the content. Exception messages carry a `traceId`.
+- **Choice:** A marker's key is `documentId`, its `path` joined with `.`, its `code`, and its `message` with the `traceId` removed. Records are flattened to markers and the keys are sorted before comparing. `revision` and `details` are left out.
+- **Trade-off:** Two markers with the same key on the same path collapse into one. A message that embeds a changing value (a count, say) makes a new key on every run, so rule messages need to be stable.
+
+## 42. The spike ran rules against the live dataset, not `--file`
+
+- **Context:** `--file` ignores NDJSON files under 300 bytes, and it still checks slugs and references against the dataset named by `--dataset`. Testing a rule change needed a live read, and the export was only useful for predicting counts.
+- **Choice:** Rule-diff counts were taken from live runs, and the export was used for predictions and for the `--file` tests. The validation diff keeps the live path as its default until the size guard and count check exist. The export-once option stays open for 5b.
+- **Trade-off:** A live run can see a change made between the base and head runs. Accepting that for now keeps the design simpler, with no artifact to store.
