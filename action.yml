@@ -1,0 +1,164 @@
+name: Sanity schema impact
+description: Shows how a Sanity schema change affects the content already in the dataset, and keeps one comment on the pull request up to date.
+branding:
+  icon: database
+  color: red
+
+inputs:
+  studio:
+    description: Studio directory inside the repository, for example studio or apps/studio.
+    required: true
+  base:
+    description: Branch to compare with. Defaults to the pull request base branch, or main outside pull requests.
+    required: false
+    default: ''
+  fail-on:
+    description: Comma-separated rules that fail the step. Empty uses the CLI defaults.
+    required: false
+    default: ''
+  skip-validation:
+    description: Skip the validation diff. Only the structural diff and the counts run.
+    required: false
+    default: 'false'
+  install:
+    description: Run pnpm install --frozen-lockfile at the repository root before the check.
+    required: false
+    default: 'false'
+  comment:
+    description: Create or update the pull request comment. Only runs on pull_request events.
+    required: false
+    default: 'true'
+  github-token:
+    description: 'Token for the pull request comment. It needs pull-requests: write.'
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check the Sanity token
+      id: gate
+      shell: bash
+      env:
+        SKIP_VALIDATION: ${{ inputs.skip-validation }}
+        INSTALL: ${{ inputs.install }}
+        COMMENT: ${{ inputs.comment }}
+      run: |
+        set -eu
+        if [ -z "${SANITY_AUTH_TOKEN:-}" ]; then
+          echo "::warning::skipped: SANITY_AUTH_TOKEN is not available, which is expected for pull requests from forks"
+          echo "run=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        check_boolean() {
+          case "$2" in
+            true|false) ;;
+            *) echo "::error::$1 must be true or false." >&2; exit 2 ;;
+          esac
+        }
+        check_boolean skip-validation "$SKIP_VALIDATION"
+        check_boolean install "$INSTALL"
+        check_boolean comment "$COMMENT"
+        echo "run=true" >> "$GITHUB_OUTPUT"
+
+    - name: Set up Node
+      if: steps.gate.outputs.run == 'true'
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+
+    - name: Resolve the base branch
+      id: base
+      if: steps.gate.outputs.run == 'true'
+      shell: bash
+      env:
+        BASE_INPUT: ${{ inputs.base }}
+      run: |
+        set -eu
+        branch="$BASE_INPUT"
+        if [ -z "$branch" ]; then
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            branch="$GITHUB_BASE_REF"
+          else
+            branch="main"
+          fi
+        fi
+        branch="${branch#origin/}"
+        # The checkout may be shallow, so fetch just the base tip. The CLI only needs that commit.
+        git fetch --no-tags --depth=1 origin "+refs/heads/$branch:refs/remotes/origin/$branch"
+        echo "ref=origin/$branch" >> "$GITHUB_OUTPUT"
+
+    - name: Build the schema impact CLI
+      if: steps.gate.outputs.run == 'true'
+      shell: bash
+      run: |
+        set -eu
+        cd "$GITHUB_ACTION_PATH"
+        corepack enable
+        pnpm install --frozen-lockfile
+        pnpm build
+
+    - name: Install Studio dependencies
+      if: steps.gate.outputs.run == 'true' && inputs.install == 'true'
+      shell: bash
+      run: pnpm install --frozen-lockfile
+
+    - name: Run the schema impact check
+      id: check
+      if: steps.gate.outputs.run == 'true'
+      shell: bash
+      env:
+        BASE_REF: ${{ steps.base.outputs.ref }}
+        STUDIO: ${{ inputs.studio }}
+        FAIL_ON: ${{ inputs.fail-on }}
+        SKIP_VALIDATION: ${{ inputs.skip-validation }}
+      run: |
+        set -u
+        args=(--base "$BASE_REF" --studio "$STUDIO" --format md)
+        if [ -n "$FAIL_ON" ]; then
+          args+=(--fail-on "$FAIL_ON")
+        fi
+        if [ "$SKIP_VALIDATION" = "true" ]; then
+          args+=(--skip-validation)
+        fi
+        # The exit code is read below, after the report is saved, so a failing rule doesn't stop the steps after it.
+        set +e
+        node "$GITHUB_ACTION_PATH/dist/cli.js" "${args[@]}" > "$RUNNER_TEMP/schema-impact.md"
+        code=$?
+        set -e
+        echo "code=$code" >> "$GITHUB_OUTPUT"
+
+    - name: Add the report to the job summary
+      if: steps.gate.outputs.run == 'true'
+      shell: bash
+      run: |
+        set -eu
+        report="$RUNNER_TEMP/schema-impact.md"
+        if [ -s "$report" ]; then
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "The schema impact check produced no report. See the job log." >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Comment on the pull request
+      if: steps.gate.outputs.run == 'true' && inputs.comment == 'true' && github.event_name == 'pull_request'
+      continue-on-error: true
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -eu
+        report="$RUNNER_TEMP/schema-impact.md"
+        if [ ! -s "$report" ]; then
+          echo "::warning::No report to comment with."
+          exit 0
+        fi
+        node "$GITHUB_ACTION_PATH/dist/cli.js" comment --file "$report"
+
+    - name: Exit with the check result
+      if: steps.gate.outputs.run == 'true'
+      shell: bash
+      env:
+        CHECK_CODE: ${{ steps.check.outputs.code }}
+      run: |
+        exit "${CHECK_CODE:-2}"
