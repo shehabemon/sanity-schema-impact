@@ -308,3 +308,75 @@ Short entries: context, choice, trade-off. Newest at the bottom.
 - **Context:** A validation run takes about 8 s on the fixture dataset, and the CLI has no timeout of its own. The impact step has no classifier in JavaScript: its published, drafts and versions split is written in GROQ.
 - **Choice:** `validateStudio` takes an optional `timeoutMs` and defaults to ten minutes. `documentKind` lives in `src/validation/diff.ts`, since nothing else needs it yet. The impact code isn't changed.
 - **Trade-off:** Ten minutes is a guess that leaves room for a slow dataset, and a hung CLI keeps a CI job busy until then. If a second module needs the ID split, the helper moves to a shared file.
+
+## 52. Unknown-field markers are folded under the structural row
+
+- **Context:** Removing a field makes the Studio flag every document that still holds it as `object.unknown-field`. That's the same fact as the removed-field row, so the validation section showed it twice. On the fixture, the second copy was 249 published documents.
+- **Choice:** A group with that code is hidden from the validation section when its document type and path match a removed field or a possible rename. The row gets a note instead ("Studio also flags these as unknown fields"), with no number, since the count is already in the sentence's documents. The JSON keeps every raw group, and `--fail-on` evaluates the visible ones.
+- **Trade-off:** A matching unknown-field group that belongs to something else would be hidden too. Matching on type and exact path keeps that unlikely.
+
+## 53. Head is the working tree, base is a detached worktree
+
+- **Context:** The check should see what is about to be pushed, and people run it before committing.
+- **Choice:** Head is the current checkout, uncommitted Studio edits included. Its ref is the branch name, or `HEAD` when detached, and its SHA is `HEAD`. The base is a detached worktree at the commit the base ref resolves to, under a temp directory.
+- **Trade-off:** The report doesn't mark a dirty head. The SHA is the last commit, so a dirty report can look like the committed state. The README says so.
+
+## 54. The base Studio reuses the head's `node_modules`
+
+- **Context:** A fresh worktree has no `node_modules`, and an install per run would add minutes. Spike 7 ran the Sanity CLI fine through a symlink.
+- **Choice:** The base Studio gets a symlink to the head Studio's `node_modules`. Cleanup removes that symlink before it removes the worktree, so the real folder is never touched.
+- **Trade-off:** Base and head share one install. If the two branches pin different `sanity` versions, the base extract still uses the head's version. Running the check on a branch that changes the Sanity version isn't reliable yet.
+
+## 55. Exit codes and the default rules
+
+- **Context:** The CLI's exit code has to mean "a rule matched" and stay separate from a crash or a bad argument.
+- **Choice:** 0 means nothing matched, 1 means a rule matched, 2 means a usage or runtime error. The default rules are `data-loss`, `newly-required` and `validation-error`. `data-loss` covers removed fields and removed types that still have documents. `validation-warning` matches warning and error groups. `evaluate` takes the parsed rules as an argument.
+- **Trade-off:** Removed types count as data loss, which the usage notes didn't spell out. The wording says "orphans" for them, to match the README example.
+
+## 56. No timestamp, sorted JSON keys
+
+- **Context:** The PR comment and the JSON are compared between runs. A timestamp would change the bytes on every run.
+- **Choice:** The report has no timestamp. Object keys are sorted at every level, so one report always gives one byte sequence. Resolved markers are a count only.
+- **Trade-off:** The JSON can't say when it was made. The CI log has that.
+
+## 57. One sentence per change, in a single-column table
+
+- **Context:** The PR comment needs one sentence per change, in the wording the README examples use. A bullet list plus a table would state each number twice.
+- **Choice:** One table row per change, holding the whole sentence with the path in a code span. Drafts and releases go in brackets after the published count. A change with no documents says "no existing documents affected".
+- **Trade-off:** The sentence has to carry the change name too, so the wording is fixed in one place (`describe.ts`) and the table has no separate label column.
+
+## 58. Project and dataset come from the environment or flags
+
+- **Context:** `documents validate` needs `--project` and `--dataset`, and the usage line doesn't give them. The Studio already reads `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET`.
+- **Choice:** Those two variables are the defaults, and `--project` and `--dataset` override them. `SANITY_AUTH_TOKEN` is the only token the tool reads.
+- **Trade-off:** The CLI doesn't read `sanity.cli.ts`, so the Studio and the tool can point at different datasets if the environment is set differently.
+
+## 59. Colour follows the terminal and NO_COLOR
+
+- **Context:** The table output goes to terminals and to CI logs, and the logs don't render colour codes.
+- **Choice:** Colour is on only when stdout is a TTY. A non-empty `NO_COLOR` turns it off as well, as the no-color.org convention says.
+- **Trade-off:** Colour is only used for the pass or fail line, so the flag matters less than it would for a bigger table.
+
+## 60. The CLI body lives in `src/cli/run.ts`
+
+- **Context:** Tests need to call the CLI without starting a process. Checking `process.argv[1]` to decide whether to run breaks under npx symlinks.
+- **Choice:** `runCli` in `src/cli/run.ts` takes its dependencies as an argument. `src/cli.ts` only calls it. `CommandRunner` moved to `adapters/process.ts`, and `validation/run.ts` re-exports it, so the package exports don't change.
+- **Trade-off:** One more file to follow.
+
+## 61. One adapter owns the Sanity CLI calls
+
+- **Context:** The binary path, the child's environment and the exit-code rules were spread across `validation/run.ts`.
+- **Choice:** `adapters/sanity-cli.ts` owns the binary path, the child environment (PATH and HOME, plus the token for validation only) and the exit-code rules. Extract accepts 0. Validation accepts 0 and 1. `validateStudio` keeps its signature.
+- **Trade-off:** `validateStudio` now depends on the adapter. The existing validation tests cover the behaviour unchanged.
+
+## 62. Cleanup runs on interrupt
+
+- **Context:** A Ctrl-C in the middle of a run would leave a worktree entry in `.git` and a temp directory behind.
+- **Choice:** `cleanOnSignal` runs the registered tasks on SIGINT and SIGTERM, then exits with 130 or 143. The tasks run newest first: the symlink, then the worktree, then the temp directory.
+- **Trade-off:** SIGKILL can't be handled, so a killed run still needs `git worktree prune`.
+
+## 63. Hidden marker and head label
+
+- **Context:** The Action in a later phase finds its own PR comment by a marker, so the markdown has to start with a fixed line. The head label also has to say when the Studio has uncommitted changes, since the report shows only the last commit's SHA.
+- **Choice:** The markdown starts with `<!-- sanity-schema-impact -->`. A detached head is labelled with its short SHA alone. When `git status --porcelain` reports changes under the Studio directory, the head label gets " + uncommitted changes".
+- **Trade-off:** Only changes under the Studio count as uncommitted, so a dirty change elsewhere in the repo doesn't show. That matches what the schema extract reads.

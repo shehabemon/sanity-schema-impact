@@ -2,6 +2,32 @@
 
 Shows, on every pull request, how a Sanity schema change affects content that already exists in the dataset. Work in progress.
 
+## Usage
+
+Run the CLI from a checkout of the branch you want to check. `--studio` is the Studio directory inside the repo, and `--base` is the ref to compare with (default `main`):
+
+```bash
+pnpm install                       # in the Studio directory first
+sanity-schema-impact --studio ./studio --base main
+```
+
+It needs a Viewer token in `SANITY_AUTH_TOKEN`, and a project and dataset from `--project` and `--dataset` or from `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET`. Locally, Node's `--env-file` flag is enough: `node --env-file=.env dist/cli.js --studio ./fixtures/studio`.
+
+| Option                   | Meaning                                                                                               |
+| ------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `--studio <dir>`         | Studio directory inside the repo (required).                                                          |
+| `--base <ref>`           | Ref to compare with (default `main`).                                                                 |
+| `--format <format>`      | `table` (default), `md` for a PR comment, or `json`.                                                  |
+| `--fail-on <rules>`      | Comma-separated rules that make the exit code 1. Default `data-loss,newly-required,validation-error`. |
+| `--skip-validation`      | Skip the validation diff. Only the structural diff and the counts run.                                |
+| `--project`, `--dataset` | Override the Sanity project and dataset.                                                              |
+
+Rules: `data-loss` (a removed field or type still has documents), `newly-required`, `options-changed`, `validation-error` (an introduced error), `validation-warning` (an introduced warning or error), `any`, `none`.
+
+Exit codes: 0 when no rule matched, 1 when one did, 2 for a usage or runtime error.
+
+The head is the current checkout, including uncommitted Studio edits. The report shows the last commit's SHA, not a dirty marker. The base is a detached worktree at the base ref's commit. `NO_COLOR` turns off the table colours.
+
 ## Development setup
 
 Requirements: Node 22.12 or newer (see `.nvmrc`) and pnpm 12 (pinned in `package.json`).
@@ -70,7 +96,7 @@ CI runs it in an `integration` job, only on pushes to `main` and only after the 
 
 ## Layout
 
-- `src/` the tool (diff, impact, validation, report, adapters)
+- `src/` the tool (diff, impact, validation, report, adapters, cli)
 - `test/` Vitest tests and schema fixtures
 - `fixtures/` seed script, data generator and fixture Studio (`fixtures/studio`)
 - `docs/decisions.md` design decisions and trade-offs
