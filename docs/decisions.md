@@ -109,3 +109,75 @@ Short entries: context, choice, trade-off. Newest at the bottom.
 - **Context:** `min`, `max`, `regex`, `custom`, `deprecated`, `hidden`, `readOnly`, `initialValue` and `description` never appear in the extract. Only `required()` shows up, and only with `--enforce-required-fields`.
 - **Choice:** The structural diff doesn't try to detect them. Validation rules go to the validation diff. Studio-only options (`deprecated`, `hidden`, `readOnly`, `initialValue`, `description`) are not diffed at all, because they don't change what existing content means.
 - **Trade-off:** Adding `max(120)` to a title won't appear in the structural diff. It only shows up when the validation diff runs against the dataset.
+
+## 19. Array members get their own `path[]` entry
+
+- **Context:** A changed reference target inside an array (`categories`) has to be reported at a path, and an array-level entry alone can't carry the member's target.
+- **Choice:** An array field is one entry with `of` (its member kinds or `_type` names), and each member is a separate `path[]` entry with the member's own kind, `refTo` or children.
+- **Trade-off:** The member kind is stored twice, once in `of` and once on `path[]`. In return a member change is reported at the member path, and `of` changes are reported at the array.
+
+## 20. Paths use `.` for objects and `[]` for array members
+
+- **Context:** Changes need stable, readable keys, and array indices change when items are reordered.
+- **Choice:** `variants[].price.amount`, `categories[]`, `tags[]`. `_key`, `_type`, `_ref`, `_weak` and the system fields never appear in a path.
+- **Trade-off:** Two array members with different shapes can't be told apart by path. Unions share a path, which is the same limit Sanity's own extract has.
+
+## 21. image, file, slug and reference are single fields
+
+- **Context:** An image is an object with `asset`, `hotspot`, `crop` and `media`. A slug and a reference are objects too. Diffing their internals would report noise such as "hotspot.x is required", which doesn't affect content.
+- **Choice:** Objects with `_type` `image`, `file` or `slug` become one field of that kind. A reference becomes kind `reference` with its target types in `refTo`.
+- **Trade-off:** Custom fields added to an image or file type aren't diffed. The fixture Studio has no `file` field, so the `file` branch is covered only by a hand-built test, not by a real extract.
+
+## 22. Named types are expanded, with a stack guard for recursion
+
+- **Context:** A field of named type `address` only shows its contents in the top-level `address` entry, so a change there never appears under the fields that use it.
+- **Choice:** `inline` references are expanded in place under each field that uses them. A name already on the expansion stack stops the walk, and that field is kept as kind `object` with `typeName` set to the name.
+- **Trade-off:** The flattened map repeats a named type's fields under every field that uses it, so a change inside one type is reported once per use. Each use is a real impact, but one change can produce several entries.
+
+## 23. Portable text is one field
+
+- **Context:** A block's children, spans, marks and markDefs are a deep tree. Diffing them would flag every change to the decorator set, and the extract only lists annotations, not the allowed decorators.
+- **Choice:** An array with a `block` member becomes kind `portableText`. `of` lists the block and any custom member `_type`s. Nothing below the field is walked.
+- **Trade-off:** A change to a custom block's fields, or to a list of decorators, isn't diffed. Adding a custom block type shows as a type change on the field.
+
+## 24. Literal string unions are strings with values
+
+- **Context:** `options.list` makes the extract emit a `union` of string literals, and a plain `string` field emits `string`. Removing an option can break existing content, so the values matter.
+- **Choice:** A union whose members are all string literals becomes kind `string` with sorted `values`. Any other union becomes kind `union` with its member names in `of`.
+- **Trade-off:** A field that moves from a plain string to a literal union is an options change, not a type change. That's the right reading for validation, but it is a choice.
+
+## 25. Type changes hide the changes under them
+
+- **Context:** When `seo` goes from an object to a string, every `seo.*` path would show as removed too.
+- **Choice:** A type change (kind, `typeName`, `refTo` or `of`) at a path suppresses every change below it. On the changed path itself only the type change is reported, except for `newly-required` and `no-longer-required`, which are still reported.
+- **Trade-off:** If a parent changes type and a child also loses a required flag, only the parent is shown.
+
+## 26. Removals and additions are collapsed to the top path
+
+- **Context:** Removing `seo` removes `seo.title`, `seo.description` and `seo.ogImage` at once. Reporting all four is noise, and the top path already says what happened.
+- **Choice:** Only the highest removed or added path is reported. Ancestors are found at `.` and `[]` boundaries.
+- **Trade-off:** The count of removed leaves isn't in the change list. The impact step counts documents per path, so the count comes from there.
+
+## 27. Rename detection pairs one removed and one added field
+
+- **Context:** Renaming `featuredImage` to `heroImage` shows up as a removal and an addition. Reporting that as a rename tells the author the data needs a move, not a drop.
+- **Choice:** Removed and added fields are grouped by parent path and shape (kind, `typeName`, `refTo`, `of` and `values`, ignoring `required`). A rename is reported only when a group has exactly one removed and one added field. Array members are never renamed.
+- **Trade-off:** Two fields with the same shape in the same parent, both renamed, are reported as removed and added, which is the safe reading. A rename that also changes the type is reported as a removal and an addition.
+
+## 28. Added document types produce no change
+
+- **Context:** The change list has no `added-type` kind. A new document type doesn't change existing content, and listing each of its fields as added would be noise.
+- **Choice:** A document type that only exists in head emits nothing.
+- **Trade-off:** An author can't see new types in the PR comment. If that turns out to matter, add an `added-type` kind rather than listing fields.
+
+## 29. no-longer-required is part of the diff output
+
+- **Context:** The project's change list keeps `no-longer-required` for JSON output only, but the classifier has to produce it for that output.
+- **Choice:** `diffSchemas` emits it. The report layer decides whether to show it.
+- **Trade-off:** The report layer has to filter it out for the markdown and terminal views.
+
+## 30. Shapes the fixture Studio doesn't exercise
+
+- **Context:** The spike covers the fixture Studio's field types. A `file` field and a reference to several types aren't in it, so their extract shape is unverified.
+- **Choice:** `file` is detected by `_type` `file`, the same way as `image`. A `dereferencesTo` that is a list of names is read as several targets. Both are covered by hand-built tests only.
+- **Trade-off:** If the real extract differs, the normaliser throws or misreports. I'll re-check both against a real extract when the fixture Studio gets those fields.
