@@ -19,12 +19,6 @@ export const post = defineType({
       options: { source: 'title' },
     }),
     defineField({
-      name: 'featuredImage',
-      title: 'Featured image',
-      type: 'image',
-      options: { hotspot: true },
-    }),
-    defineField({
       name: 'author',
       title: 'Author',
       type: 'reference',
