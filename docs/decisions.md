@@ -49,6 +49,7 @@ Short entries: context, choice, trade-off. Newest at the bottom.
 - **Context:** Impact queries should count release versions separately from drafts. `@sanity/client` 8.17 has `client.releases` and `client.createVersion({ baseId, releaseId, publishedId })`.
 - **Choice:** Not seeded for now. The seed writes only published and `drafts.*` documents.
 - **Trade-off:** The `versions.*` side of the impact queries can't be tested against real data yet. Add a release step to the seed when the impact queries are built.
+- **Superseded by 37.** The seed now creates the fixture release.
 
 ## 9. No `@eslint/js` recommended config
 
@@ -181,3 +182,63 @@ Short entries: context, choice, trade-off. Newest at the bottom.
 - **Context:** The spike covers the fixture Studio's field types. A `file` field and a reference to several types aren't in it, so their extract shape is unverified.
 - **Choice:** `file` is detected by `_type` `file`, the same way as `image`. A `dereferencesTo` that is a list of names is read as several targets. Both are covered by hand-built tests only.
 - **Trade-off:** If the real extract differs, the normaliser throws or misreports. I'll re-check both against a real extract when the fixture Studio gets those fields.
+
+## 31. Field paths compile to a fixed GROQ grammar
+
+- **Context:** Each change needs a count of the documents it touches. Nested objects and arrays need different GROQ shapes, and a single `defined()` doesn't cover arrays.
+- **Choice:** `a.b` becomes `defined(a.b)`. An array segment becomes a filter on the array: `variants[].price.amount` becomes `count(variants[defined(price.amount)]) > 0`. A path that ends in `[]` only checks that the array has members. Nested arrays recurse. Options use `in $removed` with the same shape.
+- **Trade-off:** `count(...) > 0` counts a document once when any member matches. A document with three bad variants counts as one, which is the number a PR comment needs.
+
+## 32. Newly required fields count only where the parent exists
+
+- **Context:** A missing `seo.title` on a post with no `seo` object is not a new validation error, because there is nothing to validate. Counting it would inflate the number.
+- **Choice:** Top level: `!defined(slug)`. Nested: `defined(seo) && !defined(seo.title)`. Inside an array: `count(variants[!defined(sku)]) > 0`, which is empty when the array is empty.
+- **Trade-off:** A required field inside a missing parent isn't counted here. The parent's own change covers that case.
+
+## 33. Field names pass an allowlist before they reach GROQ
+
+- **Context:** Field paths come from schema extracts and are written into the query text. GROQ has no parameter form for attribute names, so the allowlist is the only guard against injection.
+- **Choice:** Each segment must match `/^[A-Za-z_][A-Za-z0-9_]*$/`, and must not be `in`, `match`, `asc`, `desc`, `true`, `false` or `null`. The Content Lake treats `true`, `false` and `null` as literals: `defined(true)` matched every post. The first four parse as attribute names in `defined()`, but they are operators next to `in $removed`, so I reject them too. A bad path throws, and `measureImpact` reports that change as skipped. Document types never go into the text; they go through `$type`.
+- **Trade-off:** A field called `match` or `in` can't be counted. That's rare, and a skipped change is visible in the report.
+
+## 34. Counts are batched into one GROQ object per request
+
+- **Context:** One request per change is slow on a PR with many changes, and the query grows with each one.
+- **Choice:** One request covers up to 20 changes (`DEFAULT_CHUNK_SIZE`, overridable through `chunkSize`). The query is a JSON-keyed object, one entry per item. Parameters are namespaced as `$q<n>_<name>`, and the filter text is rewritten to match. Requests run one after another.
+- **Trade-off:** A failed request fails every change in its chunk. Running them sequentially is slower, but it keeps the load on the API low.
+
+## 35. Raw perspective, with the published/draft/version split done by ID prefix
+
+- **Context:** Drafts and release versions don't appear under the published perspective, and impact needs them counted separately.
+- **Choice:** `perspective: 'raw'` and `useCdn: false`. Drafts are `drafts.**`, versions are `versions.**`, and published is everything else. The split uses IDs, not release metadata, so it works for any release. Reader errors are passed through `redact`, which removes the token from the message.
+- **Trade-off:** Raw also returns system documents such as `_.releases.*`. The `_type` filter in every query excludes them. An ID with a `versions.` prefix is treated as a version even if no release exists.
+
+## 36. Fixture release: one `createVersion` call per version, using the document form
+
+- **Context:** `client.createVersion` in `@sanity/client` 8.17 takes a full `document`, or `baseId` with `releaseId`. The `baseId` form copies the published document unchanged.
+- **Choice:** The `document` form with `publishedId` and `releaseId`. One call writes the version with its changed title. `releases.create` makes the release. The seed checks each release and version before writing, so re-runs create nothing new. On the first run the SDK warned that it prefers `baseId` for existing documents. With `baseId` the version would briefly exist with the unchanged title, and the title would need a second patch, so I kept the document form.
+- **Trade-off:** The SDK warning shows on the first seed run. `--reset` deletes the release versions but keeps the release document, so a later seed can re-add the versions to it.
+
+## 37. Release versions come from their own generator
+
+- **Context:** The release needs versions with changed titles. The existing generator returns only the published and draft set, and its tests and counts rely on that.
+- **Choice:** `generateReleaseVersions(docs)` is separate. It copies every 40th published post (40, 80, ..., 320) into `versions.rFixture01.*`, with " (release edit)" added to the title. Those posts also have drafts, because every tenth post does. So a single post appears as published, draft and version, and the split gets tested.
+- **Trade-off:** The set of versioned posts is fixed, so the release never changes shape. That's what counts need.
+
+## 38. Integration tests are gated on three variables and load `.env` themselves
+
+- **Context:** The integration test needs a Viewer token and a dataset. `pnpm test` has to stay offline and fast. Vitest doesn't read `.env`, and CI doesn't have the secret yet.
+- **Choice:** `vitest.integration.config.ts` and a setup file. The setup file calls `process.loadEnvFile` when `.env` exists. Variables already set win. The suite is `describe.skipIf` unless all three variables are non-blank. The default config excludes `test/integration/**`. Expected counts come from the generator, not hard-coded numbers.
+- **Trade-off:** A skipped suite shows green. The CI log says "skipped" for the integration job until the secret and variables exist, so a misconfigured run is visible but not an error.
+
+## 39. `@sanity/client` moves to runtime dependencies
+
+- **Context:** The impact step now queries Sanity when the tool runs, not only when the seed runs.
+- **Choice:** `@sanity/client` moves from `devDependencies` to `dependencies`.
+- **Trade-off:** The published package carries the client. Writing a minimal HTTP call would avoid that, but it would have to reimplement auth, retries and perspective handling.
+
+## 40. Unbuildable changes are skipped, and reader errors are not
+
+- **Context:** A change with an unsafe path, or a required flag on an array member, has no count query. Throwing would stop the whole PR check for one change.
+- **Choice:** `measureImpact` returns `{ change, skipped }` for those. Errors from the reader propagate, so an expired token or a network failure stops the run instead of looking like zero impact.
+- **Trade-off:** A skipped change only shows up in the report. The report layer has to show skips, or they are invisible.
