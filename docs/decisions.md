@@ -254,3 +254,57 @@ Short entries: context, choice, trade-off. Newest at the bottom.
 - **Context:** `--file` ignores NDJSON files under 300 bytes, and it still checks slugs and references against the dataset named by `--dataset`. Testing a rule change needed a live read, and the export was only useful for predicting counts.
 - **Choice:** Rule-diff counts were taken from live runs, and the export was used for predictions and for the `--file` tests. The validation diff keeps the live path as its default until the size guard and count check exist. The export-once option stays open for 5b.
 - **Trade-off:** A live run can see a change made between the base and head runs. Accepting that for now keeps the design simpler, with no artifact to store.
+
+## 43. Paths are rendered for people and generalised for grouping
+
+- **Context:** The CLI reports a path as an array. Field names are strings, array indices are numbers, and array members with a `_key` are objects like `{"_key": "lnk001"}`. I confirmed all three with a read-only `--file` run on a crafted document. Groups need a path that ignores which array member failed.
+- **Choice:** `path` joins names with `.`, writes an index as `[3]` and a keyed member as `[_key=="lnk001"]`. `pathPattern` is the same string with every index and key replaced by `[]`. So `social.links[_key=="lnk001"].url` has the pattern `social.links[].url`.
+- **Trade-off:** A malformed segment fails the whole parse, so an unexpected CLI shape stops the run rather than producing a wrong key.
+
+## 44. The marker key leaves out the level
+
+- **Context:** Entry 41 fixed the key as document, path, code and message. Duplicate markers on one document can show up in the output.
+- **Choice:** The key is a JSON tuple of those four values, so a delimiter in a message can't make two keys collide. Level isn't part of it. Duplicates collapse to one marker in each list.
+- **Trade-off:** If a rule moves from warning to error, the diff shows no change. That's the intended reading, since the same problem is still there. Duplicates can't be counted separately, which is fine for a PR comment.
+
+## 45. Exit codes 0 and 1 are results
+
+- **Context:** Spike 9.5 showed that exit 1 means "errors found", and anything else is a real failure (bad level, auth, a missing dataset).
+- **Choice:** Exit 0 and 1 parse stdout. Any other code throws with the last 500 characters of stderr, passed through `redact` with the token.
+- **Trade-off:** The stderr tail is still free text, so a message from the CLI could include something unexpected. Redaction only covers the token value.
+
+## 46. Zero documents is an error, not a clean run
+
+- **Context:** The ndjson output has no document count, and a dataset with nothing in it exits 0 with no markers. A clean result and an empty dataset would look the same.
+- **Choice:** Before the CLI runs, one GROQ count excludes `_.**`, `system.*` and `sanity.*`. Zero throws. The count uses the raw perspective, so drafts and versions are included. It matched the CLI's 549 on the fixture dataset.
+- **Trade-off:** It's one more request per run. The count and the CLI can still disagree if a publish lands between them.
+
+## 47. Secrets stay out of the child's environment and out of errors
+
+- **Context:** Studio code runs in the CLI process with the token in its environment (see the security notes in the README).
+- **Choice:** `runCommand` replaces the child's environment with the one it is given and runs without a shell. `validateStudio` passes only `PATH`, `HOME` and `SANITY_AUTH_TOKEN`. Start failures, timeouts and signals go through `redact` with the listed secrets. `sanity.ts`'s `redact` now calls the same helper.
+- **Trade-off:** The child can't see other environment variables, so a Studio that needs one more variable has to be changed here.
+
+## 48. The Studio's own binary, not npx
+
+- **Context:** `npx` or `pnpm exec` can pick up a different `sanity` version, and can install packages on the way. Spike 7 showed `pnpm exec` installing the whole workspace when `node_modules` was missing.
+- **Choice:** `validateStudio` runs `<studioDir>/node_modules/.bin/sanity`. A missing binary throws an error that names `pnpm install`.
+- **Trade-off:** The Studio has to be installed before the check runs. The CI job has to run `pnpm install` in each tree, which it already does for the root.
+
+## 49. Only introduced markers are grouped
+
+- **Context:** The report lists what a PR adds. Grouping the resolved and unchanged markers would mix them into the PR's numbers.
+- **Choice:** `compareValidation` groups `introduced` only. A group counts each document once and splits the count by ID prefix. Its level is the highest level among its markers. The sample is the five lowest IDs.
+- **Trade-off:** A group's `level` can be higher than the level of a single marker in it, if the rule uses several levels.
+
+## 50. Validation fixtures are un-ignored
+
+- **Context:** `.gitignore` ignores `*.ndjson`, which is right for run output but would also drop the test fixtures.
+- **Choice:** Added `!test/fixtures/**/*.ndjson`. The fixtures are real CLI records, copied unchanged. The only exception is the crafted `paths.ndjson`, which I made with a read-only `--file` run.
+- **Trade-off:** A stray ndjson dump under `test/fixtures` would be committed. The directory is small, so a review catches it.
+
+## 51. Timeout default and where the ID helper lives
+
+- **Context:** A validation run takes about 8 s on the fixture dataset, and the CLI has no timeout of its own. The impact step has no classifier in JavaScript: its published, drafts and versions split is written in GROQ.
+- **Choice:** `validateStudio` takes an optional `timeoutMs` and defaults to ten minutes. `documentKind` lives in `src/validation/diff.ts`, since nothing else needs it yet. The impact code isn't changed.
+- **Trade-off:** Ten minutes is a guess that leaves room for a slow dataset, and a hung CLI keeps a CI job busy until then. If a second module needs the ID split, the helper moves to a shared file.

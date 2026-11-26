@@ -57,7 +57,14 @@ The fixture Studio schema can also be extracted without logging in:
 
 ### Integration tests
 
-`pnpm test:integration` runs `test/integration/impact.test.ts` against the fixture dataset with `SANITY_AUTH_TOKEN` (Viewer). It loads `.env` itself, and skips every test unless `SANITY_AUTH_TOKEN`, `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET` are all set. `pnpm test` never runs it.
+`pnpm test:integration` runs `test/integration/impact.test.ts` and `test/integration/validation.test.ts` against the fixture dataset with `SANITY_AUTH_TOKEN` (Viewer). It loads `.env` itself, and skips every test unless `SANITY_AUTH_TOKEN`, `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET` are all set. `pnpm test` never runs it. The validation test copies the fixture Studio to a temp directory, adds a stricter title rule there, and never edits `fixtures/studio`.
+
+### Validation and Studio code
+
+The validation diff runs `sanity documents validate` from each Studio's own `node_modules`. Custom validators in the Studio run inside that process, with the token in its environment. So:
+
+- Use a dedicated Viewer token for this tool, never an editor or admin token.
+- Never run it from a `pull_request_target` workflow. That event gives the job secrets while it runs code from the pull request. Use `pull_request`, where forks get no secrets.
 
 CI runs it in an `integration` job, only on pushes to `main` and only after the main job passes. The job reads the repository secret `SANITY_AUTH_TOKEN` and the repository variables `SANITY_PROJECT_ID` and `SANITY_DATASET`. Until those exist, the tests skip and the job passes. Pull requests from forks don't receive secrets, so the job never runs for them.
 
