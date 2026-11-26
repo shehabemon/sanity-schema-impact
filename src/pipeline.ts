@@ -78,8 +78,9 @@ export async function runPipeline(options: PipelineOptions): Promise<Report> {
 
   const baseExtract = join(scratch, 'base-schema.json');
   const headExtract = join(scratch, 'head-schema.json');
-  await extractSchema({ studioDir: baseStudio, outputPath: baseExtract, runner });
-  await extractSchema({ studioDir: headStudio, outputPath: headExtract, runner });
+  const target = { projectId: options.projectId, dataset: options.dataset, runner };
+  await extractSchema({ ...target, studioDir: baseStudio, outputPath: baseExtract });
+  await extractSchema({ ...target, studioDir: headStudio, outputPath: headExtract });
   const baseSchema = normalise(JSON.parse(await readFile(baseExtract, 'utf8')) as unknown);
   const headSchema = normalise(JSON.parse(await readFile(headExtract, 'utf8')) as unknown);
   const changes = diffSchemas(baseSchema, headSchema);

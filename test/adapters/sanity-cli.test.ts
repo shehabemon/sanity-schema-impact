@@ -47,7 +47,13 @@ describe('sanityBinary', () => {
 describe('extractSchema', () => {
   it('writes the extract to the given path with the enforced required fields flag', async () => {
     const { runner, calls } = fakeRunner({});
-    await extractSchema({ studioDir, runner, outputPath: join(scratch, 'out.json') });
+    await extractSchema({
+      studioDir,
+      runner,
+      outputPath: join(scratch, 'out.json'),
+      projectId: 'proj1',
+      dataset: 'fixture',
+    });
 
     expect(calls[0]?.args).toEqual([
       'schema',
@@ -56,16 +62,36 @@ describe('extractSchema', () => {
       '--path',
       join(scratch, 'out.json'),
     ]);
+  });
+
+  it('passes the Studio project and dataset, and nothing else from the environment', async () => {
+    const { runner, calls } = fakeRunner({});
+    await extractSchema({
+      studioDir,
+      runner,
+      outputPath: join(scratch, 'out.json'),
+      projectId: 'proj1',
+      dataset: 'fixture',
+    });
+
     expect(calls[0]?.env).toEqual({
       PATH: process.env['PATH'] ?? '',
       HOME: process.env['HOME'] ?? '',
+      SANITY_STUDIO_PROJECT_ID: 'proj1',
+      SANITY_STUDIO_DATASET: 'fixture',
     });
   });
 
   it('throws with the tail of stderr when the extract fails', async () => {
     const { runner } = fakeRunner({ code: 2, stderr: 'Schema file already exists' });
     await expect(
-      extractSchema({ studioDir, runner, outputPath: join(scratch, 'x.json') }),
+      extractSchema({
+        studioDir,
+        runner,
+        outputPath: join(scratch, 'x.json'),
+        projectId: 'proj1',
+        dataset: 'fixture',
+      }),
     ).rejects.toThrow('sanity schema extract exited with code 2. Schema file already exists');
   });
 });

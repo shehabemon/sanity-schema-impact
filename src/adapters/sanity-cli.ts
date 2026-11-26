@@ -32,16 +32,19 @@ export interface ExtractOptions {
   readonly studioDir: string;
   readonly outputPath: string;
   readonly runner: CommandRunner;
+  /** Studios read these at load time, so the resolved values are passed on. */
+  readonly projectId: string;
+  readonly dataset: string;
 }
 
 /** Writes the Studio's schema to `outputPath`. Any non-zero exit is a failure here. */
 export async function extractSchema(options: ExtractOptions): Promise<void> {
-  const { studioDir, outputPath, runner } = options;
+  const { studioDir, outputPath, runner, projectId, dataset } = options;
   const result = await runner({
     cmd: sanityBinary(studioDir),
     args: ['schema', 'extract', '--enforce-required-fields', '--path', outputPath],
     cwd: studioDir,
-    env: childEnv({}),
+    env: childEnv({ SANITY_STUDIO_PROJECT_ID: projectId, SANITY_STUDIO_DATASET: dataset }),
     timeoutMs: EXTRACT_TIMEOUT_MS,
   });
   if (result.code !== 0) {
