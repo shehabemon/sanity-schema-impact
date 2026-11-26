@@ -464,3 +464,63 @@ Short entries: context, choice, trade-off. Newest at the bottom.
 - **Context:** The repository has no YAML dependency, and a dependency for one test file isn't worth it.
 - **Choice:** `test/action/parse-action.ts` reads the layout this file uses: two spaces for inputs, four for steps, six for keys. Prettier parses the real file, so a YAML syntax error fails `format:check`. Those two checks together cover most of what a parser would.
 - **Trade-off:** A layout change that the reader doesn't expect would fail the test loudly, not silently. Anything beyond this layout needs a real parser.
+
+## 78. Scaffolds are files, and the tool never runs them
+
+- **Context:** The tool reads with a Viewer token and never writes to a dataset. A migration needs a write, so running one is a separate and deliberate step.
+- **Choice:** `--migrations` writes `<studio>/migrations/<slug>/index.ts` and stops. The dry run and the real run are left to `sanity migrations run`.
+- **Trade-off:** Someone has to run the migration after the PR merges. Nothing happens on its own, which I think is the right default for data.
+
+## 79. One scaffold per counted change, in the folder layout the Sanity CLI reads
+
+- **Context:** `sanity migrations run` looks for `migrations/<id>/index.ts`, and the folder name is the ID. A change that counted no documents has nothing to migrate.
+- **Choice:** One folder per change that counted at least one document, drafts and versions included. Zero-count rows and skipped rows get nothing. The slug is built from the names, for example `unset-post-featured-image`. Repeated slugs get `-2`, `-3`.
+- **Trade-off:** A removed field with no data gets no file, so the PR shows the count and nothing else. That's intended.
+
+## 80. Renames copy with `setIfMissing` and skip documents where the new field is set
+
+- **Context:** A possible rename comes from matching field types, so it's a guess. If the new field already has a value, unsetting the old one would throw that value away.
+- **Choice:** Each document copies the old value with `setIfMissing`, then unsets the old field. A document that already has a value in the new field is left as it is.
+- **Trade-off:** Those documents keep the old field, so the migration doesn't fully clear it. Renames inside arrays and renames that move a field to another object aren't scaffolded. They're listed on stderr as not scaffolded.
+
+## 81. A removed type gets a delete that's commented out
+
+- **Context:** `delete_` fails while other documents still reference the document, and the content is lost for good once it runs.
+- **Choice:** The generated hook returns `[]`, and the `delete_(doc._id)` line is commented with a TODO about references. Running the file as it is changes nothing.
+- **Trade-off:** A developer has to check the references and uncomment the line. That's one step more than a plain delete, and I'd rather have that step.
+
+## 82. Array members are addressed by `_key`, with a helper in each file that needs it
+
+- **Context:** An unset on `variants[].price` needs the keys of the members, which are only known at run time. Members without a `_key` can't be addressed by Sanity.
+- **Choice:** Files for array paths include a small `fieldPaths` helper. It expands each `[]` step into `{ _key }` segments and skips members without a key. Plain paths like `seo.title` use the string form and don't include the helper.
+- **Trade-off:** The helper adds about 20 lines to each array file. A keyless member is skipped without a message. The fixture data has none, but a dataset with keyless members would show fewer patches than the count.
+
+## 83. An existing migration folder is never overwritten
+
+- **Context:** A developer may have edited a scaffold. Regenerating after a later schema change would throw those edits away.
+- **Choice:** The folder is created with `mkdir` without `recursive`. If it's already there, the scaffold is skipped and the CLI says so on stderr. The file itself is written with the `wx` flag.
+- **Trade-off:** An old scaffold never picks up a later change to its own schema diff. To refresh one, the developer deletes its folder first.
+
+## 84. Scaffold flags are `--migrations` and `--migrations-dir`
+
+- **Context:** `parseArgs` from `node:util` can't read an optional value for one flag. `sanity migrations run` only finds migrations in the Studio's own folder.
+- **Choice:** `--migrations` (a boolean) writes to `<studio>/migrations`. `--migrations-dir <dir>` writes to that directory and also turns scaffolds on. An empty directory is refused.
+- **Trade-off:** Two flags for one feature. A directory other than the Studio's folder is only useful as an artifact, since the Sanity CLI won't find it there.
+
+## 85. Scaffold messages go to stderr, so stdout stays the report
+
+- **Context:** The Action redirects stdout into the report file for the PR comment. A stray line on stdout would end up in the comment.
+- **Choice:** The count of files written, the skipped folders and the not-scaffolded rows all go to stderr. The report is printed the same way as before.
+- **Trade-off:** Anyone reading a terminal sees the messages in a different stream. In the Action they appear in the job log.
+
+## 86. The migration integration test only dry-runs
+
+- **Context:** The migrate runner has a write mode, and a wrong flag in a test would write to `fixture-dev`.
+- **Choice:** The test copies the fixture Studio, writes the scaffolds into the copy, and type-checks them with the Studio's own `tsconfig.json`. Then it runs each scaffold as `--dry-run` through a helper that refuses any other argument. It compares the document counts with the impact step.
+- **Trade-off:** The test depends on the dry-run output format, which the Sanity CLI could change. A format change would fail the test loudly, which is the behaviour I want.
+
+## 87. Scaffolds don't filter out drafts or versions
+
+- **Context:** Impact counts drafts and release versions. The migration runner could have skipped them, and the counts would then have disagreed.
+- **Choice:** No filter excludes them. The live dry run planned patches on 32 drafts and 5 versions, and those numbers equal the impact counts. The `filter` uses the same expression as the impact query, `hasData`, so the two sides keep the same definition of "has data".
+- **Trade-off:** If a later migrate version starts skipping drafts, the integration test catches it, because the counts would no longer match.

@@ -21,10 +21,31 @@ It needs a Viewer token in `SANITY_AUTH_TOKEN`, and a project and dataset from `
 | `--fail-on <rules>`      | Comma-separated rules that make the exit code 1. Default `data-loss,newly-required,validation-error`. |
 | `--skip-validation`      | Skip the validation diff. Only the structural diff and the counts run.                                |
 | `--project`, `--dataset` | Override the Sanity project and dataset.                                                              |
+| `--migrations`           | Write migration scaffolds to `<studio>/migrations`. See below.                                        |
+| `--migrations-dir <dir>` | Write migration scaffolds to `<dir>` instead. Turns `--migrations` on.                                |
 
 Rules: `data-loss` (a removed field or type still has documents), `newly-required`, `options-changed`, `validation-error` (an introduced error), `validation-warning` (an introduced warning or error), `any`, `none`.
 
 Exit codes: 0 when no rule matched, 1 when one did, 2 for a usage or runtime error.
+
+## Migration scaffolds
+
+With `--migrations`, the CLI writes one migration for each change that still has documents. Each one is a folder under `<studio>/migrations`, the place `sanity migrations run` looks:
+
+- Removed field: unsets the field on every document that has it.
+- Possible rename: copies the value to the new field, then unsets the old one. A document that already has a value in the new field is left alone, so nothing is dropped.
+- Removed type: a migration with the delete commented out. It changes nothing until you uncomment the line.
+
+Changes with no documents get no file. Type changes, option changes, newly required fields, and renames inside arrays or across objects are listed on stderr as not scaffolded, because those need a decision from you.
+
+The tool never runs a migration, and it never writes to the dataset. A folder that already exists is skipped and reported, so your edits survive a second run. Drafts and release versions are covered, the same as in the impact counts. Check each file, then dry-run it. A dry run is the default:
+
+```bash
+sanity migrations run unset-post-featured-image --project <id> --dataset <name>
+sanity migrations run unset-post-featured-image --project <id> --dataset <name> --no-dry-run
+```
+
+The report on stdout doesn't change. The scaffold messages go to stderr.
 
 The head is the current checkout, including uncommitted Studio edits. The report shows the last commit's SHA, not a dirty marker. The base is a detached worktree at the base ref's commit. `NO_COLOR` turns off the table colours.
 
@@ -83,7 +104,7 @@ The fixture Studio schema can also be extracted without logging in:
 
 ### Integration tests
 
-`pnpm test:integration` runs `test/integration/impact.test.ts` and `test/integration/validation.test.ts` against the fixture dataset with `SANITY_AUTH_TOKEN` (Viewer). It loads `.env` itself, and skips every test unless `SANITY_AUTH_TOKEN`, `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET` are all set. `pnpm test` never runs it. The validation test copies the fixture Studio to a temp directory, adds a stricter title rule there, and never edits `fixtures/studio`.
+`pnpm test:integration` runs `test/integration/impact.test.ts`, `test/integration/validation.test.ts` and `test/integration/migrations.test.ts` against the fixture dataset with `SANITY_AUTH_TOKEN` (Viewer). It loads `.env` itself, and skips every test unless `SANITY_AUTH_TOKEN`, `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET` are all set. `pnpm test` never runs it. The validation test copies the fixture Studio to a temp directory, adds a stricter title rule there, and never edits `fixtures/studio`. The migration test does the same copy, generates the scaffolds into it, type-checks them, and runs only `sanity migrations run --dry-run` against them.
 
 ### Validation and Studio code
 
