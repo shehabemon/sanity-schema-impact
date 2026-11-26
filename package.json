@@ -1,0 +1,35 @@
+{
+  "name": "sanity-schema-impact",
+  "version": "0.0.0",
+  "description": "Shows how a Sanity schema change affects existing content on every pull request.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.12"
+  },
+  "packageManager": "pnpm@12.23.0",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "seed": "tsx --env-file-if-exists=.env fixtures/seed.ts"
+  },
+  "devDependencies": {
+    "@faker-js/faker": "^10.6.0",
+    "@sanity/client": "^8.17.0",
+    "@types/node": "^22.20.7",
+    "@vitest/coverage-v8": "^5.1.2",
+    "eslint": "^10.15.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.10.1",
+    "tsup": "^9.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.74.0",
+    "vitest": "^5.1.2"
+  }
+}

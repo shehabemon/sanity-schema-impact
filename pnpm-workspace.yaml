@@ -1,0 +1,7 @@
+packages:
+  - '.'
+  - 'fixtures/studio'
+
+# esbuild is used by tsup, tsx and vitest; its postinstall fetches the native binary.
+allowBuilds:
+  esbuild: true

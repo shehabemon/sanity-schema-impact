@@ -1,0 +1,8 @@
+node_modules
+dist
+coverage
+.env*
+fixtures/studio/.sanity
+fixtures/studio/dist
+*.ndjson
+.DS_Store
