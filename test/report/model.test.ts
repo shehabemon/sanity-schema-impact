@@ -6,6 +6,7 @@ import {
   type Report,
   foldUnknownFields,
   REPORT_VERSION,
+  ruleLabel,
   visibleGroups,
   type ReportInput,
 } from '../../src/report/model.js';
@@ -202,5 +203,99 @@ describe('unknown-field folding', () => {
     );
 
     expect(visibleGroups(report)).toHaveLength(1);
+  });
+});
+
+describe('unknown-field folding for Sanity v3 markers', () => {
+  const removedShop: ImpactResult = {
+    change: {
+      kind: 'removed-field',
+      docType: 'product',
+      path: 'store.shop',
+      before: { kind: 'string', required: false },
+    },
+    published: 40,
+    drafts: 3,
+    versions: 0,
+    sample: [],
+  };
+  const v3Shop: MarkerGroup = {
+    documentType: 'product',
+    pathPattern: 'store.shop',
+    code: '',
+    message: "Field 'shop' does not exist on type 'catalogProduct'",
+    level: 'warning',
+    published: 40,
+    drafts: 3,
+    versions: 0,
+    sample: [],
+  };
+
+  it('folds a code-less marker that names the removed field onto its row', () => {
+    const report = buildReport(
+      input({
+        impact: [removedShop],
+        validation: { introduced: [v3Shop], resolvedCount: 0 },
+      }),
+    );
+
+    expect(visibleGroups(report)).toEqual([]);
+    expect(foldUnknownFields(report.changes, [v3Shop]).flagged.get(0)).toBe(43);
+  });
+
+  it('keeps a code-less marker visible when the field name is not the path end', () => {
+    const report = buildReport(
+      input({
+        impact: [removedShop],
+        validation: {
+          introduced: [{ ...v3Shop, message: "Field 'barcode' does not exist on type 'x'" }],
+          resolvedCount: 0,
+        },
+      }),
+    );
+
+    expect(visibleGroups(report)).toHaveLength(1);
+  });
+
+  it('keeps a code-less marker visible when its message is not the unknown-field message', () => {
+    const report = buildReport(
+      input({
+        impact: [removedShop],
+        validation: {
+          introduced: [{ ...v3Shop, message: 'Must be at most 40 characters long' }],
+          resolvedCount: 0,
+        },
+      }),
+    );
+
+    expect(visibleGroups(report)).toHaveLength(1);
+  });
+
+  it('keeps a code-less marker visible when no change matches its document type', () => {
+    const report = buildReport(
+      input({
+        impact: [removedShop],
+        validation: {
+          introduced: [{ ...v3Shop, documentType: 'collection' }],
+          resolvedCount: 0,
+        },
+      }),
+    );
+
+    expect(visibleGroups(report)).toHaveLength(1);
+  });
+});
+
+describe('ruleLabel', () => {
+  it('puts the code before the message', () => {
+    expect(ruleLabel('string.maximum-length', 'Must be at most 40 characters long')).toBe(
+      'string.maximum-length: Must be at most 40 characters long',
+    );
+  });
+
+  it('shows the message alone when the marker has no code', () => {
+    expect(ruleLabel('', "Field 'shop' does not exist on type 'catalogProduct'")).toBe(
+      "Field 'shop' does not exist on type 'catalogProduct'",
+    );
   });
 });

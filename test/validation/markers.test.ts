@@ -51,6 +51,34 @@ describe('parseValidationOutput', () => {
     expect(parseValidationOutput(`\n${line ?? ''}\n\n   \n`)).toHaveLength(1);
   });
 
+  it('reads Sanity v3 markers, which have no code, with an empty code', () => {
+    const [first, , , fourth] = parseValidationOutput(fixture('v3-unknown-field.ndjson'));
+
+    expect(first).toEqual({
+      documentId: 'drafts.product-0101',
+      documentType: 'product',
+      level: 'warning',
+      code: '',
+      message: "Field 'shop' does not exist on type 'catalogProduct'",
+      path: 'store.shop',
+      pathPattern: 'store.shop',
+    });
+    expect(fourth).toMatchObject({ documentId: 'collection-0303', code: '', path: 'title' });
+  });
+
+  it('rejects a code that is present but is not a string', () => {
+    const line = JSON.stringify({
+      documentId: 'post-1',
+      documentType: 'post',
+      level: 'error',
+      markers: [{ code: 7, level: 'error', message: 'x', path: ['title'] }],
+    });
+
+    expect(() => parseValidationOutput(line)).toThrow(
+      new Error('Malformed validation output on line 1.'),
+    );
+  });
+
   it('returns no markers for empty output', () => {
     expect(parseValidationOutput('')).toEqual([]);
   });

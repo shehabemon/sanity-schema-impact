@@ -1,5 +1,5 @@
 import { describeResult } from './describe.js';
-import { foldUnknownFields, visibleGroups, type RefInfo, type Report } from './model.js';
+import { foldUnknownFields, ruleLabel, visibleGroups, type RefInfo, type Report } from './model.js';
 
 export interface TableOptions {
   readonly colour: boolean;
@@ -67,7 +67,7 @@ export function toTable(report: Report, options: TableOptions): string {
           group.level,
           group.documentType,
           group.pathPattern,
-          `${group.code}: ${group.message}`,
+          ruleLabel(group.code, group.message),
           `${String(group.published)} published, ${String(group.drafts)} drafts, ${String(group.versions)} in releases`,
         ]),
       ];

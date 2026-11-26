@@ -5,6 +5,7 @@ export interface Marker {
   readonly documentId: string;
   readonly documentType: string;
   readonly level: MarkerLevel;
+  /** Empty when the Studio's output has no code, as Sanity v3 output doesn't. */
   readonly code: string;
   readonly message: string;
   /** Readable field path, e.g. `body[_key=="abc"].text` or `tags[0]`. */
@@ -65,7 +66,7 @@ function parseMarker(value: unknown): Omit<Marker, 'documentId' | 'documentType'
   if (
     typeof level !== 'string' ||
     !LEVELS.includes(level) ||
-    typeof code !== 'string' ||
+    (code !== undefined && typeof code !== 'string') ||
     typeof message !== 'string' ||
     segments === undefined
   ) {
@@ -73,7 +74,7 @@ function parseMarker(value: unknown): Omit<Marker, 'documentId' | 'documentType'
   }
   return {
     level: level as MarkerLevel,
-    code,
+    code: code ?? '',
     message: message.replace(TRACE_ID, ''),
     path: renderPath(segments, false),
     pathPattern: renderPath(segments, true),

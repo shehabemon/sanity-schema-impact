@@ -183,3 +183,30 @@ describe('toMarkdown', () => {
     expect(toMarkdown(buildReport(input()))).toContain('No rules failed.');
   });
 });
+
+describe('toMarkdown with Sanity v3 markers', () => {
+  it('shows a rule without a code as its message alone', () => {
+    const report = buildReport(
+      input({
+        validation: {
+          introduced: [
+            group({
+              documentType: 'product',
+              pathPattern: 'title',
+              code: '',
+              message: "Field 'title' does not exist on type 'collectionTitle'",
+              level: 'warning',
+            }),
+          ],
+          resolvedCount: 0,
+        },
+      }),
+    );
+
+    const text = toMarkdown(report);
+    expect(text).toContain(
+      "| warning | product | title | Field 'title' does not exist on type 'collectionTitle' | 129 published, 25 drafts, 6 in releases |",
+    );
+    expect(text).not.toContain(': Field');
+  });
+});

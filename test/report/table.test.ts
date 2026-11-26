@@ -45,3 +45,36 @@ describe('toTable', () => {
     expect(toTable(report(), { colour: false })).toContain('Passed');
   });
 });
+
+describe('toTable with Sanity v3 markers', () => {
+  it('shows a rule without a code as its message alone', () => {
+    const base = report();
+    const withRule = buildReport({
+      base: base.base,
+      head: base.head,
+      projectId: 'proj1',
+      dataset: 'fixture',
+      impact: [],
+      validation: {
+        introduced: [
+          {
+            documentType: 'product',
+            pathPattern: 'title',
+            code: '',
+            message: "Field 'title' does not exist on type 'collectionTitle'",
+            level: 'warning',
+            published: 2,
+            drafts: 0,
+            versions: 0,
+            sample: ['product-1', 'product-2'],
+          },
+        ],
+        resolvedCount: 0,
+      },
+    });
+
+    const text = toTable(withRule, { colour: false });
+    expect(text).toContain("Field 'title' does not exist on type 'collectionTitle'");
+    expect(text).not.toMatch(/: Field 'title'/);
+  });
+});

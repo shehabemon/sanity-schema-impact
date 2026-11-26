@@ -1,5 +1,5 @@
 import { describeResult } from './describe.js';
-import { foldUnknownFields, visibleGroups, type RefInfo, type Report } from './model.js';
+import { foldUnknownFields, ruleLabel, visibleGroups, type RefInfo, type Report } from './model.js';
 import type { MarkerGroup } from '../validation/diff.js';
 
 /** The Action looks for this line to find and update its own comment. */
@@ -40,7 +40,7 @@ function refText(ref: RefInfo): string {
 
 function groupRow(group: MarkerGroup): string {
   const documents = `${String(group.published)} published, ${String(group.drafts)} drafts, ${String(group.versions)} in releases`;
-  const rule = `${group.code}: ${truncate(group.message)}`;
+  const rule = ruleLabel(group.code, truncate(group.message));
   return `| ${group.level} | ${escapeText(group.documentType)} | ${escapeText(group.pathPattern)} | ${escapeText(rule)} | ${documents} |`;
 }
 

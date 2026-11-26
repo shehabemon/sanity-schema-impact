@@ -7,6 +7,9 @@ export const REPORT_VERSION = 1;
 /** The code the Studio's validator uses for a field the schema no longer defines. */
 export const UNKNOWN_FIELD_CODE = 'object.unknown-field';
 
+/** Sanity v3 reports the same problem with no code, only this message. */
+const V3_UNKNOWN_FIELD = /^Field '([^']+)' does not exist on type '[^']+'$/;
+
 export interface RefInfo {
   readonly ref: string;
   readonly sha: string;
@@ -79,6 +82,23 @@ function documentsIn(group: MarkerGroup): number {
 }
 
 /**
+ * True for a group that says a field is not in the schema. With a code that's the Studio's
+ * unknown-field code. Without one it's the v3 message, and the field has to be the last segment
+ * of the path, so `Field 'shop'` only matches a path ending in `shop`.
+ */
+function isUnknownFieldGroup(group: MarkerGroup): boolean {
+  if (group.code === UNKNOWN_FIELD_CODE) return true;
+  if (group.code !== '') return false;
+  const named = V3_UNKNOWN_FIELD.exec(group.message)?.[1];
+  return named !== undefined && group.pathPattern.split('.').pop() === named;
+}
+
+/** The rule text for a row: the code and message, or the message alone when there's no code. */
+export function ruleLabel(code: string, message: string): string {
+  return code === '' ? message : `${code}: ${message}`;
+}
+
+/**
  * Removing a field makes every document that still holds it fail the Studio's unknown-field
  * check. That's the same fact as the structural row, so those groups are hidden and counted on
  * the row instead. The raw groups stay in the report.
@@ -89,7 +109,7 @@ export function foldUnknownFields(
 ): Folded {
   const flagged = new Map<number, number>();
   const visible = groups.filter((group) => {
-    if (group.code !== UNKNOWN_FIELD_CODE) return true;
+    if (!isUnknownFieldGroup(group)) return true;
     const index = changes.findIndex(
       (result) =>
         result.change.docType === group.documentType && pathOf(result.change) === group.pathPattern,
