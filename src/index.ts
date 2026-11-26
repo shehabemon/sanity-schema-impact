@@ -14,10 +14,30 @@ export {
 export {
   compareValidation,
   validateStudio,
-  type CommandRunner,
   type ValidateStudioOptions,
   type ValidationComparison,
   type ValidationRun,
 } from './validation/run.js';
-export { runCommand, type CommandOptions, type CommandResult } from './adapters/process.js';
+export {
+  runCommand,
+  type CommandOptions,
+  type CommandResult,
+  type CommandRunner,
+} from './adapters/process.js';
 export { createSanityReader, type SanityReader } from './adapters/sanity.js';
+export {
+  addWorktree,
+  currentRef,
+  removeWorktree,
+  repoRoot,
+  resolveSha,
+  type GitContext,
+} from './adapters/git.js';
+export { extractSchema, runValidation, sanityBinary } from './adapters/sanity-cli.js';
+export { buildReport, type Report, type ReportInput } from './report/model.js';
+export { toJson } from './report/json.js';
+export { toMarkdown } from './report/markdown.js';
+export { toTable } from './report/table.js';
+export { DEFAULT_FAIL_ON, evaluate, parseFailOn, type FailRule } from './report/fail-on.js';
+export { runPipeline, type PipelineOptions } from './pipeline.js';
+export { createCleanup, cleanOnSignal, type Cleanup } from './cleanup.js';
