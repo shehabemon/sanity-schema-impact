@@ -94,6 +94,62 @@ The validation diff runs `sanity documents validate` from each Studio's own `nod
 
 CI runs it in an `integration` job, only on pushes to `main` and only after the main job passes. The job reads the repository secret `SANITY_AUTH_TOKEN` and the repository variables `SANITY_PROJECT_ID` and `SANITY_DATASET`. Until those exist, the tests skip and the job passes. Pull requests from forks don't receive secrets, so the job never runs for them.
 
+## GitHub Action
+
+The action runs the check on pull requests, writes the report to the job summary, and keeps one comment on the pull request up to date.
+
+```yaml
+name: Schema impact
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  schema-impact:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shehabemon/sanity-schema-impact@v0 # pin a full commit SHA in production
+        env:
+          SANITY_AUTH_TOKEN: ${{ secrets.SANITY_AUTH_TOKEN }}
+          SANITY_STUDIO_PROJECT_ID: ${{ vars.SANITY_PROJECT_ID }}
+          SANITY_STUDIO_DATASET: ${{ vars.SANITY_DATASET }}
+        with:
+          studio: studio
+          install: 'true'
+```
+
+- `SANITY_AUTH_TOKEN` is a Viewer token, stored as a repository secret. It is required.
+- `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET` are optional. The CLI reads them when `--project` and `--dataset` aren't given.
+- The Sanity values come from `env:`, not `with:`, so the token never appears in a workflow input.
+- The check needs the Studio's dependencies installed. Either set `install: 'true'` (runs `pnpm install --frozen-lockfile` at the repository root) or install them in an earlier step.
+- Pin a full commit SHA in production (`uses: shehabemon/sanity-schema-impact@<sha> # v0.x.y`). `@v0` is a placeholder until the first release.
+- The action builds the CLI from its own source on each run, with Node 22 and pnpm. The npm release will replace that with a pinned `npx` call.
+
+**Pull requests from forks** don't receive secrets. The action then prints a warning, the check is skipped, and the job passes.
+
+**Never use `pull_request_target`.** That event runs the workflow with the secrets while it checks out code from the pull request. The Studio runs its own code (custom validators) during the check, so a fork could read the token. Use `pull_request`.
+
+| Input             | Default               | Meaning                                                                                              |
+| ----------------- | --------------------- | ---------------------------------------------------------------------------------------------------- |
+| `studio`          | required              | Studio directory inside the repository.                                                              |
+| `base`            | `''`                  | Branch to compare with. Empty means the pull request's base branch, or `main` outside pull requests. |
+| `fail-on`         | `''`                  | Rules that fail the step, as in the CLI. Empty uses the CLI defaults.                                |
+| `skip-validation` | `false`               | Skip the validation diff.                                                                            |
+| `install`         | `false`               | Run `pnpm install --frozen-lockfile` at the repository root before the check. pnpm only.             |
+| `comment`         | `true`                | Create or update the pull request comment. Only on `pull_request` events.                            |
+| `github-token`    | `${{ github.token }}` | Token for the comment. Needs `pull-requests: write`.                                                 |
+
+The step exits with the CLI's exit code, so `fail-on` decides whether the check fails. A comment that can't be posted is reported as a failed step, and it doesn't hide the check's result.
+
+The comment is found by its first line, `<!-- sanity-schema-impact -->`, and updated in place. GitHub caps a comment at 65,536 characters. A longer report is cut at a line break, with a note that the full report is in the job summary.
+
+The comment can also be posted from any shell: `sanity-schema-impact comment --file report.md`. It reads `GITHUB_TOKEN`, `GITHUB_REPOSITORY`, `GITHUB_EVENT_PATH` and `GITHUB_API_URL`. Outside a pull request event it warns and exits 0.
+
 ## Layout
 
 - `src/` the tool (diff, impact, validation, report, adapters, cli)

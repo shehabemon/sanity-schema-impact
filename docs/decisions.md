@@ -380,3 +380,87 @@ Short entries: context, choice, trade-off. Newest at the bottom.
 - **Context:** The Action in a later phase finds its own PR comment by a marker, so the markdown has to start with a fixed line. The head label also has to say when the Studio has uncommitted changes, since the report shows only the last commit's SHA.
 - **Choice:** The markdown starts with `<!-- sanity-schema-impact -->`. A detached head is labelled with its short SHA alone. When `git status --porcelain` reports changes under the Studio directory, the head label gets " + uncommitted changes".
 - **Trade-off:** Only changes under the Studio count as uncommitted, so a dirty change elsewhere in the repo doesn't show. That matches what the schema extract reads.
+
+## 64. Pull request comment through the REST API, without Octokit
+
+- **Context:** The Action needs to list comments, then create or update one. That is three REST calls, and the global `fetch` in Node 22 covers them.
+- **Choice:** `src/github/comment.ts` calls the REST API directly. Comments are read with `per_page=100`, following the `Link` header. The `fetch` function and the API root are injectable. GitHub Enterprise works through `GITHUB_API_URL`.
+- **Trade-off:** Pagination, error mapping and the redaction are our code, not a library's. A `Link` header that leaves the API host is refused, so the token never goes to another host.
+
+## 65. The comment is matched by marker alone
+
+- **Context:** The Action has to find its own comment. Filtering on the comment's author type (`Bot`) is the obvious way to tell ours from a user's.
+- **Choice:** The match is on the first line, `<!-- sanity-schema-impact -->`, and nothing else. When several match, the newest wins.
+- **Trade-off:** The `github-token` input can be a personal token, and its comments have the `User` type. A bot filter would then post a new comment on every run. The cost is that someone who pastes the marker into a comment can make the next run fail with a 403 when it tries to edit that comment.
+
+## 66. Comment bodies are cut at a line break, and the limit is in UTF-16 units
+
+- **Context:** GitHub rejects a comment body over 65,536 characters. JavaScript string lengths count UTF-16 units, and an emoji takes two.
+- **Choice:** A body over the limit is cut at the last line break in the second half of the budget, so a table row or a code line usually isn't left half-written. If there is no such break, the cut is at the budget. The cut never leaves half a surrogate pair. A note pointing to the job summary goes last, and the note is counted in the budget.
+- **Trade-off:** The cut loses everything after it, and the report has no per-section limit. The JSON output and the job summary still have the full report.
+
+## 67. The Action builds the CLI from its own source for now
+
+- **Context:** The npm package doesn't exist yet. The Action can't pin a published version.
+- **Choice:** The composite action installs and builds the CLI in `$GITHUB_ACTION_PATH` with `pnpm install --frozen-lockfile` and `pnpm build`. The step runs after `actions/setup-node` with Node 22, and `corepack enable` provides the pinned pnpm.
+- **Trade-off:** Each run installs the devDependencies and builds, which costs some minutes. The caller's Node version doesn't matter. Once the npm release exists, this becomes a pinned `npx sanity-schema-impact@x` call, and that will be a separate change.
+
+## 68. Node 22 comes from `setup-node` inside the Action
+
+- **Context:** The CLI needs Node 22.12 or newer. The Action could ask the caller to set up Node, or set it up itself.
+- **Choice:** The Action runs `actions/setup-node@v4` with `node-version: '22'`. Callers don't have to set anything up.
+- **Trade-off:** One more action dependency, and a second Node install if the caller has already set one up. A wrong Node version would fail in a confusing way, so I think the extra install is worth it.
+
+## 69. Sanity values come from the environment, never from `with:`
+
+- **Context:** An input is visible in the workflow file and in logs. A token passed through `with:` would be easy to leak by mistake.
+- **Choice:** `SANITY_AUTH_TOKEN`, `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET` are read from the job's environment. The only secret input is `github-token`, which defaults to `${{ github.token }}`. The check step doesn't have `GITHUB_TOKEN` in its environment. Only the comment step does.
+- **Trade-off:** The caller has to put the values in `env:`, which is a little more typing.
+
+## 70. Forks skip the check and the job passes
+
+- **Context:** Pull requests from forks receive no secrets, so `SANITY_AUTH_TOKEN` is empty for them.
+- **Choice:** The first step checks the token. If it's empty, the step writes a `::warning::` and sets an output. Each later step's `if:` reads that output and skips. The job passes, because a skipped check shouldn't look like a failure on every fork PR.
+- **Trade-off:** A missing secret on a same-repo PR also passes quietly, apart from the warning. The warning is the only signal, and I think that's acceptable.
+
+## 71. Inputs reach shell scripts only through `env:`
+
+- **Context:** A `${{ inputs.* }}` expression inside a `run:` script is pasted into the script text before it runs. A `studio` or `base` value with quotes or `;` in it could then run arbitrary commands.
+- **Choice:** Every input is copied into an `env:` entry and read as `"$VAR"`. The structural test asserts that no `run:` block contains `${{`.
+- **Trade-off:** Scripts are a little longer. Expressions used in `if:` and `env:` are still GitHub's own, and they don't get pasted into shell text.
+
+## 72. Base fetch uses an explicit refspec and depth 1
+
+- **Context:** `actions/checkout` may fetch only the PR merge commit, so the base branch may not exist locally. The CLI runs `git worktree add` on the base commit.
+- **Choice:** `git fetch --no-tags --depth=1 origin "+refs/heads/<branch>:refs/remotes/origin/<branch>"`. The explicit refspec makes `origin/<branch>` exist whatever the checkout's fetch configuration is. The base is `origin/<branch>`, not the bare branch name.
+- **Trade-off:** The history of the base branch is missing, but the CLI only needs the commit's tree.
+
+## 73. The check writes its report by redirection, not an `--output` flag
+
+- **Context:** I first wrote the step with an `--output` flag. The CLI has no such flag, and I kept the main command unchanged.
+- **Choice:** The step redirects stdout to `$RUNNER_TEMP/schema-impact.md`. The exit code is captured with `set +e`, so a failing rule doesn't stop the job before the summary and the comment run.
+- **Trade-off:** A message from the CLI on stdout would end up in the report. The CLI only writes the report to stdout, and its messages go to stderr.
+
+## 74. The extract child gets the Studio project and dataset, not the full environment
+
+- **Context:** Studios read `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET` when they load. The extract child got only `PATH` and `HOME`, so a Studio that requires those variables would fail. Passing the whole environment would give Studio code `GITHUB_TOKEN` and anything else in the job.
+- **Choice:** `extractSchema` passes the resolved project ID and dataset, from the flag or the environment, and nothing else. The fixture extract gives identical output with or without them.
+- **Trade-off:** A Studio that needs another variable has to be changed in `childEnv`, as in entry 47.
+
+## 75. The comment step can't fail the job
+
+- **Context:** The comment step writes to the API, and it can fail for reasons the check doesn't control, such as a read-only token on a fork.
+- **Choice:** The step has `continue-on-error: true`. The final step then exits with the check's code, so a failed comment doesn't hide `fail-on`.
+- **Trade-off:** A broken comment shows only as a failed step in the log, with the job still green. The job summary still has the report.
+
+## 76. The offline action test stubs the check, and runs the comment for real
+
+- **Context:** The check needs live Sanity access. The build needs the registry. The comment has to be tested against a real HTTP endpoint without going to GitHub.
+- **Choice:** `test/action/simulate.test.ts` runs each `run:` script from `action.yml` with a clean environment. The build and the `uses:` step are skipped. `dist/cli.js` in a temp directory is a launcher. `comment` runs the real `src/cli.ts` through tsx, loaded with `NODE_OPTIONS`. The check records its arguments and prints a fixed report. The API is a `node:http` server on 127.0.0.1.
+- **Trade-off:** The test doesn't cover the real build, the real check or `setup-node`. Those are covered by the dogfood workflow, which I can't run from here.
+
+## 77. Input defaults and expressions are checked as text, not as YAML
+
+- **Context:** The repository has no YAML dependency, and a dependency for one test file isn't worth it.
+- **Choice:** `test/action/parse-action.ts` reads the layout this file uses: two spaces for inputs, four for steps, six for keys. Prettier parses the real file, so a YAML syntax error fails `format:check`. Those two checks together cover most of what a parser would.
+- **Trade-off:** A layout change that the reader doesn't expect would fail the test loudly, not silently. Anything beyond this layout needs a real parser.
