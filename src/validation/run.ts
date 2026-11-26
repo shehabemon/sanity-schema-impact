@@ -14,8 +14,9 @@ export interface ValidationRun {
 export type { CommandRunner };
 
 export interface ValidateStudioOptions {
-  /** Studio directory with its own `node_modules` (the `sanity` binary is taken from there). */
+  /** Studio directory. The `sanity` binary is looked for in it and its parents up to `repoRoot`. */
   readonly studioDir: string;
+  readonly repoRoot: string;
   readonly projectId: string;
   readonly dataset: string;
   readonly token: string;
@@ -23,6 +24,8 @@ export interface ValidateStudioOptions {
   readonly runner: CommandRunner;
   readonly reader: SanityReader;
   readonly timeoutMs?: number;
+  /** `SANITY_STUDIO_*` variables from `--pass-env`. */
+  readonly passEnv?: Readonly<Record<string, string>>;
 }
 
 export interface ValidationComparison extends MarkerDiff {
@@ -37,14 +40,14 @@ const COUNT_QUERY =
   'count(*[!(_id in path("_.**")) && !(_type match "system.*") && !(_type match "sanity.*")])';
 
 /**
- * Validates a Studio's dataset with the `sanity` binary from the Studio's own `node_modules`.
+ * Validates a Studio's dataset with the `sanity` binary from its `node_modules` or a parent's.
  * Custom validators in the Studio run in this process, with the token in its environment.
  */
 export async function validateStudio(options: ValidateStudioOptions): Promise<ValidationRun> {
   const { studioDir, projectId, dataset, token, runner, reader } = options;
   const level = options.level ?? DEFAULT_LEVEL;
 
-  sanityBinary(studioDir);
+  sanityBinary(studioDir, options.repoRoot);
 
   const documentCount = await reader.fetch<unknown>(COUNT_QUERY, {});
   if (typeof documentCount !== 'number') {
@@ -56,12 +59,14 @@ export async function validateStudio(options: ValidateStudioOptions): Promise<Va
 
   const result = await runValidation({
     studioDir,
+    repoRoot: options.repoRoot,
     projectId,
     dataset,
     token,
     level,
     runner,
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(options.passEnv === undefined ? {} : { passEnv: options.passEnv }),
   });
 
   return { level, documentCount, markers: parseValidationOutput(result.stdout) };

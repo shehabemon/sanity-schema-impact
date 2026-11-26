@@ -1,5 +1,6 @@
 import { parseArgs } from 'node:util';
 import { parseFailOn, type FailRule } from '../report/fail-on.js';
+import { parsePassEnv } from '../studio-env.js';
 
 export type OutputFormat = 'table' | 'md' | 'json';
 
@@ -18,6 +19,8 @@ export interface CliOptions {
   readonly headSha?: string;
   /** Set when migration scaffolds are wanted. Without `dir`, the Studio's own migrations folder is used. */
   readonly migrations?: { readonly dir?: string };
+  /** Studio variable names from `--pass-env`, validated but not yet read from the environment. */
+  readonly passEnv?: readonly string[];
 }
 
 export type ParsedArgs =
@@ -58,6 +61,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       'base-name': { type: 'string' },
       'head-name': { type: 'string' },
       'head-sha': { type: 'string' },
+      'pass-env': { type: 'string' },
       migrations: { type: 'boolean' },
       'migrations-dir': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
@@ -86,6 +90,8 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
   const baseName = label(values['base-name'], '--base-name');
   const headName = label(values['head-name'], '--head-name');
 
+  const passEnv = parsePassEnv(values['pass-env']);
+
   const migrations =
     migrationsDir !== undefined || values.migrations === true
       ? { ...(migrationsDir === undefined ? {} : { dir: migrationsDir }) }
@@ -105,6 +111,7 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       ...(headName === undefined ? {} : { headName }),
       ...(headSha === undefined ? {} : { headSha }),
       ...(migrations === undefined ? {} : { migrations }),
+      ...(passEnv.length === 0 ? {} : { passEnv }),
     },
   };
 }

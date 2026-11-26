@@ -164,3 +164,24 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs(['comment', '--help'])).toEqual({ kind: 'help' });
   });
 });
+
+describe('parseCliArgs --pass-env', () => {
+  it('reads the names into the options', () => {
+    const parsed = parseCliArgs(['--studio', 'apps/sanity', '--pass-env', 'SANITY_STUDIO_ID']);
+
+    expect(parsed).toMatchObject({ kind: 'run', options: { passEnv: ['SANITY_STUDIO_ID'] } });
+  });
+
+  it('leaves passEnv out when the flag is not given', () => {
+    const parsed = parseCliArgs(['--studio', 'apps/sanity']);
+
+    expect(parsed).toMatchObject({ kind: 'run' });
+    expect(parsed.kind === 'run' && 'passEnv' in parsed.options).toBe(false);
+  });
+
+  it('refuses a name outside the SANITY_STUDIO_ prefix', () => {
+    expect(() =>
+      parseCliArgs(['--studio', 'apps/sanity', '--pass-env', 'SANITY_AUTH_TOKEN']),
+    ).toThrow('--pass-env only takes variable names that start with SANITY_STUDIO_');
+  });
+});

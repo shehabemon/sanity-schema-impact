@@ -28,6 +28,7 @@ beforeAll(async () => {
   await mkdir(join(studioDir, 'node_modules', '.bin'), { recursive: true });
   await writeFile(join(studioDir, 'node_modules', '.bin', 'sanity'), '');
   await mkdir(emptyStudioDir);
+  common.repoRoot = workDir;
 });
 
 afterAll(async () => {
@@ -60,7 +61,7 @@ function fakeReader(count: number): { reader: SanityReader; queries: string[] } 
   return { reader, queries };
 }
 
-const common = { projectId: 'proj1', dataset: 'fixture-dev', token };
+const common = { projectId: 'proj1', dataset: 'fixture-dev', token, repoRoot: '' };
 
 describe('validateStudio', () => {
   it('refuses to run when the Studio has no local Sanity binary, and says how to fix it', async () => {
@@ -69,7 +70,7 @@ describe('validateStudio', () => {
 
     await expect(
       validateStudio({ ...common, studioDir: emptyStudioDir, runner, reader }),
-    ).rejects.toThrow('Run pnpm install in the Studio directory first.');
+    ).rejects.toThrow("Install the Studio's dependencies first.");
     expect(calls).toHaveLength(0);
   });
 

@@ -36,11 +36,57 @@ afterAll(async () => {
 
 describe('sanityBinary', () => {
   it('points at the Studio-local binary', () => {
-    expect(sanityBinary(studioDir)).toBe(join(studioDir, 'node_modules', '.bin', 'sanity'));
+    expect(sanityBinary(studioDir, scratch)).toBe(
+      join(studioDir, 'node_modules', '.bin', 'sanity'),
+    );
   });
 
-  it('asks for pnpm install when the Studio has no binary', () => {
-    expect(() => sanityBinary(join(scratch, 'missing'))).toThrow('Run pnpm install');
+  it('asks for the Studio dependencies, without naming a package manager', () => {
+    const error = (() => {
+      try {
+        sanityBinary(join(scratch, 'missing'), scratch);
+        return undefined;
+      } catch (caught) {
+        return caught as Error;
+      }
+    })();
+
+    expect(error?.message).toContain("Install the Studio's dependencies first.");
+    expect(error?.message).not.toMatch(/pnpm|npm|yarn/);
+  });
+
+  it('finds a hoisted binary in the repository root when the Studio has none', async () => {
+    const repo = join(scratch, 'hoisted');
+    await mkdir(join(repo, 'node_modules', '.bin'), { recursive: true });
+    await writeFile(join(repo, 'node_modules', '.bin', 'sanity'), '');
+    await mkdir(join(repo, 'apps', 'sanity'), { recursive: true });
+
+    expect(sanityBinary(join(repo, 'apps', 'sanity'), repo)).toBe(
+      join(repo, 'node_modules', '.bin', 'sanity'),
+    );
+  });
+
+  it('prefers the binary in the Studio over one in the root', async () => {
+    const repo = join(scratch, 'both');
+    const own = join(repo, 'apps', 'sanity', 'node_modules', '.bin');
+    await mkdir(own, { recursive: true });
+    await mkdir(join(repo, 'node_modules', '.bin'), { recursive: true });
+    await writeFile(join(own, 'sanity'), '');
+    await writeFile(join(repo, 'node_modules', '.bin', 'sanity'), '');
+
+    expect(sanityBinary(join(repo, 'apps', 'sanity'), repo)).toBe(join(own, 'sanity'));
+  });
+
+  it('does not look above the repository root', async () => {
+    const outer = join(scratch, 'outer');
+    await mkdir(join(outer, 'node_modules', '.bin'), { recursive: true });
+    await writeFile(join(outer, 'node_modules', '.bin', 'sanity'), '');
+    const repo = join(outer, 'repo');
+    await mkdir(join(repo, 'studio'), { recursive: true });
+
+    expect(() => sanityBinary(join(repo, 'studio'), repo)).toThrow(
+      "Install the Studio's dependencies first.",
+    );
   });
 });
 
@@ -49,6 +95,7 @@ describe('extractSchema', () => {
     const { runner, calls } = fakeRunner({});
     await extractSchema({
       studioDir,
+      repoRoot: scratch,
       runner,
       outputPath: join(scratch, 'out.json'),
       projectId: 'proj1',
@@ -68,6 +115,7 @@ describe('extractSchema', () => {
     const { runner, calls } = fakeRunner({});
     await extractSchema({
       studioDir,
+      repoRoot: scratch,
       runner,
       outputPath: join(scratch, 'out.json'),
       projectId: 'proj1',
@@ -82,11 +130,33 @@ describe('extractSchema', () => {
     });
   });
 
+  it('passes the pass-env values alongside the project and dataset', async () => {
+    const { runner, calls } = fakeRunner({});
+    await extractSchema({
+      studioDir,
+      repoRoot: scratch,
+      runner,
+      outputPath: join(scratch, 'out.json'),
+      projectId: 'proj1',
+      dataset: 'fixture',
+      passEnv: { SANITY_STUDIO_ID: 'studio-id' },
+    });
+
+    expect(calls[0]?.env).toEqual({
+      PATH: process.env['PATH'] ?? '',
+      HOME: process.env['HOME'] ?? '',
+      SANITY_STUDIO_ID: 'studio-id',
+      SANITY_STUDIO_PROJECT_ID: 'proj1',
+      SANITY_STUDIO_DATASET: 'fixture',
+    });
+  });
+
   it('throws with the tail of stderr when the extract fails', async () => {
     const { runner } = fakeRunner({ code: 2, stderr: 'Schema file already exists' });
     await expect(
       extractSchema({
         studioDir,
+        repoRoot: scratch,
         runner,
         outputPath: join(scratch, 'x.json'),
         projectId: 'proj1',
@@ -101,6 +171,7 @@ describe('runValidation', () => {
     const { runner, calls } = fakeRunner({});
     await runValidation({
       studioDir,
+      repoRoot: scratch,
       runner,
       projectId: 'proj1',
       dataset: 'fixture',
@@ -113,10 +184,32 @@ describe('runValidation', () => {
     expect(calls[0]?.secrets).toEqual([token]);
   });
 
+  it('passes the pass-env values, and still gives the token only to the validate child', async () => {
+    const { runner, calls } = fakeRunner({});
+    await runValidation({
+      studioDir,
+      repoRoot: scratch,
+      runner,
+      projectId: 'proj1',
+      dataset: 'fixture',
+      token,
+      level: 'warning',
+      passEnv: { SANITY_STUDIO_ID: 'studio-id' },
+    });
+
+    expect(calls[0]?.env).toEqual({
+      PATH: process.env['PATH'] ?? '',
+      HOME: process.env['HOME'] ?? '',
+      SANITY_STUDIO_ID: 'studio-id',
+      SANITY_AUTH_TOKEN: token,
+    });
+  });
+
   it('accepts exit code 1, because that means problems were found', async () => {
     const { runner } = fakeRunner({ code: 1, stdout: '{"level":"error"}\n' });
     const result = await runValidation({
       studioDir,
+      repoRoot: scratch,
       runner,
       projectId: 'proj1',
       dataset: 'fixture',
@@ -131,6 +224,7 @@ describe('runValidation', () => {
     const { runner } = fakeRunner({ code: 4, stderr: `bad token ${token}` });
     const error = await runValidation({
       studioDir,
+      repoRoot: scratch,
       runner,
       projectId: 'proj1',
       dataset: 'fixture',

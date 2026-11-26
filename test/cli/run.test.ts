@@ -184,6 +184,28 @@ describe('runCli', () => {
     expect(await runCli(['--studio', 'no/such/studio'], deps)).toBe(2);
     expect(err.join('')).toContain('No Studio directory at');
   });
+
+  it('exits 2 and names the variable when a --pass-env name is not set', async () => {
+    const env = {
+      SANITY_STUDIO_PROJECT_ID: 'p',
+      SANITY_STUDIO_DATASET: 'd',
+      SANITY_AUTH_TOKEN: 's',
+    };
+    const { deps, err } = harness(env);
+    expect(await runCli(['--studio', '.', '--pass-env', 'SANITY_STUDIO_ID'], deps)).toBe(2);
+    expect(err.join('')).toBe('SANITY_STUDIO_ID is named in --pass-env but not set.\n');
+  });
+
+  it('exits 2 for a --pass-env name outside the Studio prefix, before anything runs', async () => {
+    const env = {
+      SANITY_STUDIO_PROJECT_ID: 'p',
+      SANITY_STUDIO_DATASET: 'd',
+      SANITY_AUTH_TOKEN: 's',
+    };
+    const { deps, err } = harness(env);
+    expect(await runCli(['--studio', '.', '--pass-env', 'GITHUB_TOKEN'], deps)).toBe(2);
+    expect(err.join('')).toContain('--pass-env only takes variable names');
+  });
 });
 
 describe('colourEnabled', () => {

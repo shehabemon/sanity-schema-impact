@@ -21,6 +21,7 @@ import { toJson } from '../report/json.js';
 import { toMarkdown } from '../report/markdown.js';
 import type { Report } from '../report/model.js';
 import { toTable } from '../report/table.js';
+import { resolvePassEnv } from '../studio-env.js';
 import { VERSION } from '../version.js';
 import { parseCliArgs, type OutputFormat, type ParsedArgs } from './args.js';
 
@@ -68,6 +69,7 @@ Options:
   --dataset <name>      Dataset name (default: SANITY_STUDIO_DATASET)
   --migrations          Write migration scaffolds to <studio>/migrations
   --migrations-dir <dir> Write migration scaffolds to <dir> (turns --migrations on)
+  --pass-env <names>    Comma-separated SANITY_STUDIO_* variables passed to the Studio's Sanity processes
   -h, --help            Show this help
   -v, --version         Show the version
 
@@ -126,6 +128,14 @@ export async function runCli(argv: readonly string[], deps: RunDeps): Promise<nu
     return 2;
   }
 
+  let passEnv: Record<string, string>;
+  try {
+    passEnv = resolvePassEnv(options.passEnv ?? [], deps.env);
+  } catch (error) {
+    deps.stderr.write(`${errorText(error)}\n`);
+    return 2;
+  }
+
   let studioDir: string;
   try {
     studioDir = await realpath(resolve(deps.cwd, options.studio));
@@ -145,6 +155,7 @@ export async function runCli(argv: readonly string[], deps: RunDeps): Promise<nu
       token,
       failOn: options.failOn,
       skipValidation: options.skipValidation,
+      passEnv,
       display: {
         ...(options.baseName === undefined ? {} : { base: options.baseName }),
         ...(options.headName === undefined ? {} : { head: options.headName }),

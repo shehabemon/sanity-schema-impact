@@ -81,6 +81,7 @@ describe.skipIf(!enabled)('validation diff against the fixture dataset', () => {
     const reader = createSanityReader({ projectId, dataset, token, apiVersion: API_VERSION });
     const base = await validateStudio({
       studioDir: studioSource,
+      repoRoot: studioSource,
       projectId,
       dataset,
       token,
@@ -89,6 +90,7 @@ describe.skipIf(!enabled)('validation diff against the fixture dataset', () => {
     });
     const head = await validateStudio({
       studioDir: headStudio,
+      repoRoot: headStudio,
       projectId,
       dataset,
       token,
