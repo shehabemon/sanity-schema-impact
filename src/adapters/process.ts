@@ -17,6 +17,8 @@ export interface CommandResult {
   readonly stderr: string;
 }
 
+export type CommandRunner = (options: CommandOptions) => Promise<CommandResult>;
+
 /** Replaces every occurrence of each secret with `[redacted]`. Longer secrets go first. */
 export function redact(text: string, secrets: readonly string[]): string {
   const ordered = secrets.filter((s) => s !== '').sort((a, b) => b.length - a.length);
