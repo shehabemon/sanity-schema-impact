@@ -34,6 +34,14 @@ export interface PipelineOptions {
   readonly cleanup: Cleanup;
   /** Where the base worktree and extracts go. Defaults to the system temp directory. */
   readonly scratchRoot?: string;
+  /** Labels for the report. They don't change what is checked out or compared. */
+  readonly display?: DisplayNames;
+}
+
+export interface DisplayNames {
+  readonly base?: string;
+  readonly head?: string;
+  readonly headSha?: string;
 }
 
 const SKIPPED_VALIDATION = 'Skipped with --skip-validation.';
@@ -55,9 +63,14 @@ export async function runPipeline(options: PipelineOptions): Promise<Report> {
   }
 
   const current = await currentRef(git);
-  const head = (await hasUncommittedChanges(git, '.'))
+  const checkedOut = (await hasUncommittedChanges(git, '.'))
     ? { ...current, uncommitted: true }
     : current;
+  const head = {
+    ...checkedOut,
+    ref: options.display?.head ?? checkedOut.ref,
+    sha: options.display?.headSha ?? checkedOut.sha,
+  };
   const baseSha = await resolveSha(git, options.base);
 
   const scratch = await mkdtemp(join(options.scratchRoot ?? tmpdir(), 'schema-impact-'));
@@ -105,7 +118,7 @@ export async function runPipeline(options: PipelineOptions): Promise<Report> {
   }
 
   const report = buildReport({
-    base: { ref: options.base, sha: baseSha },
+    base: { ref: options.display?.base ?? options.base, sha: baseSha },
     head,
     projectId: options.projectId,
     dataset: options.dataset,

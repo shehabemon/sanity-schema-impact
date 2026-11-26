@@ -98,6 +98,7 @@ beforeAll(async () => {
   git(['init', '-q', '-b', 'main', repo]);
   git(['add', 'studio/sanity.config.ts']);
   git(['commit', '-q', '-m', 'studio']);
+  git(['update-ref', 'refs/remotes/origin/main', 'main']);
   studio = await realpath(studio);
 });
 
@@ -135,6 +136,32 @@ describe('runPipeline', () => {
 
     expect(git(['worktree', 'list']).split('\n')).toHaveLength(1);
     expect(await readFile(join(studio, 'node_modules', '.bin', 'sanity'), 'utf8')).toBe('');
+  });
+
+  it('shows the names it is given, and still compares against the remote branch', async () => {
+    const cleanup = createCleanup();
+    const report = await runPipeline({
+      ...options(cleanup, { skipValidation: true }),
+      base: 'origin/main',
+      display: { base: 'main', head: 'schema/title-limit', headSha: 'd'.repeat(40) },
+    });
+    await cleanup.run();
+
+    const mainSha = git(['rev-parse', 'main']);
+    expect(report.base).toEqual({ ref: 'main', sha: mainSha });
+    expect(report.head).toMatchObject({ ref: 'schema/title-limit', sha: 'd'.repeat(40) });
+  });
+
+  it('keeps the checked-out ref when no names are given', async () => {
+    const cleanup = createCleanup();
+    const report = await runPipeline({
+      ...options(cleanup, { skipValidation: true }),
+      base: 'origin/main',
+    });
+    await cleanup.run();
+
+    expect(report.base.ref).toBe('origin/main');
+    expect(report.head.ref).toBe('main');
   });
 
   it('cleans up the worktree when the base extract fails', async () => {

@@ -87,6 +87,7 @@ runs:
         # The checkout may be shallow, so fetch just the base tip. The CLI only needs that commit.
         git fetch --no-tags --depth=1 origin "+refs/heads/$branch:refs/remotes/origin/$branch"
         echo "ref=origin/$branch" >> "$GITHUB_OUTPUT"
+        echo "name=$branch" >> "$GITHUB_OUTPUT"
 
     - name: Build the schema impact CLI
       if: steps.gate.outputs.run == 'true'
@@ -110,12 +111,18 @@ runs:
       shell: bash
       env:
         BASE_REF: ${{ steps.base.outputs.ref }}
+        BASE_NAME: ${{ steps.base.outputs.name }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         STUDIO: ${{ inputs.studio }}
         FAIL_ON: ${{ inputs.fail-on }}
         SKIP_VALIDATION: ${{ inputs.skip-validation }}
       run: |
         set -u
-        args=(--base "$BASE_REF" --studio "$STUDIO" --format md)
+        args=(--base "$BASE_REF" --base-name "$BASE_NAME" --studio "$STUDIO" --format md)
+        # On pull_request the checkout is the merge commit. Label the head with the pull request's own branch and commit.
+        if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+          args+=(--head-name "$GITHUB_HEAD_REF" --head-sha "$HEAD_SHA")
+        fi
         if [ -n "$FAIL_ON" ]; then
           args+=(--fail-on "$FAIL_ON")
         fi

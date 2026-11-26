@@ -48,6 +48,50 @@ describe('parseCliArgs', () => {
     });
   });
 
+  it('reads the names and the head commit the report should show', () => {
+    const parsed = parseCliArgs([
+      '--studio',
+      'studio',
+      '--base',
+      'origin/main',
+      '--base-name',
+      'main',
+      '--head-name',
+      'schema/title-limit',
+      '--head-sha',
+      'd'.repeat(40),
+    ]);
+
+    expect(parsed).toMatchObject({
+      kind: 'run',
+      options: {
+        base: 'origin/main',
+        baseName: 'main',
+        headName: 'schema/title-limit',
+        headSha: 'd'.repeat(40),
+      },
+    });
+  });
+
+  it('leaves the display names unset when the flags are not given', () => {
+    const parsed = parseCliArgs(['--studio', './studio']);
+
+    expect(parsed.kind === 'run' && 'headSha' in parsed.options).toBe(false);
+    expect(parsed.kind === 'run' && 'baseName' in parsed.options).toBe(false);
+  });
+
+  it('refuses an empty display name', () => {
+    expect(() => parseCliArgs(['--studio', 'x', '--head-name', ' '])).toThrow(
+      '--head-name needs a name.',
+    );
+  });
+
+  it('refuses a head commit that is not a full SHA', () => {
+    expect(() => parseCliArgs(['--studio', 'x', '--head-sha', 'abc1234'])).toThrow(
+      '--head-sha needs a full commit SHA.',
+    );
+  });
+
   it('leaves migration scaffolds off unless asked for', () => {
     const parsed = parseCliArgs(['--studio', './studio']);
 

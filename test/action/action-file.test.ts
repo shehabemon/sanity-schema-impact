@@ -65,6 +65,20 @@ describe('action.yml', () => {
     expect(comment?.continueOnError).toBe(true);
   });
 
+  it('installs only the root package when it builds the CLI, not the Studio workspace', () => {
+    const build = action.steps.find((step) => step.name === 'Build the schema impact CLI');
+
+    expect(build?.run).toContain('pnpm install --frozen-lockfile --filter sanity-schema-impact');
+    expect(build?.run).not.toMatch(/pnpm install --frozen-lockfile\s*$/m);
+  });
+
+  it('passes the pull request head commit through the step environment', () => {
+    const check = action.steps.find((step) => step.name === 'Run the schema impact check');
+
+    expect(check?.env['HEAD_SHA']).toBe('${{ github.event.pull_request.head.sha }}');
+    expect(check?.run).not.toContain('github.event');
+  });
+
   it('passes the comment token through the step environment', () => {
     const comment = action.steps.find((step) => step.name === 'Comment on the pull request');
 

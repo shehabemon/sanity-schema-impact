@@ -58,6 +58,9 @@ Usage: sanity-schema-impact --studio <dir> [options]
 Options:
   --studio <dir>        Studio directory in this repository (required)
   --base <ref>          Git ref to compare with (default: main)
+  --base-name <name>    Name shown for the base in the report (default: --base)
+  --head-name <name>    Name shown for the head in the report (default: the checked-out branch)
+  --head-sha <sha>      Full commit SHA shown for the head (default: the checked-out commit)
   --format <format>     table, md or json (default: table)
   --fail-on <rules>     Comma-separated rules that make the exit code 1 (default: data-loss,newly-required,validation-error)
   --skip-validation     Skip the validation diff
@@ -142,6 +145,11 @@ export async function runCli(argv: readonly string[], deps: RunDeps): Promise<nu
       token,
       failOn: options.failOn,
       skipValidation: options.skipValidation,
+      display: {
+        ...(options.baseName === undefined ? {} : { base: options.baseName }),
+        ...(options.headName === undefined ? {} : { head: options.headName }),
+        ...(options.headSha === undefined ? {} : { headSha: options.headSha }),
+      },
       runner: deps.runner,
       reader: deps.createReader({ projectId, dataset, token, apiVersion: API_VERSION }),
       cleanup,

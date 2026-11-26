@@ -24,6 +24,8 @@ const SKIPPED_BY_TEST = new Set(['Build the schema impact CLI']);
 const TOKEN_GATE = 'sanity-viewer-token-for-test';
 const RUNNER_TOKEN = 'github-runner-token-for-test';
 const REPORT = '<!-- sanity-schema-impact -->\n## Schema impact\n\nNo schema changes found.\n';
+const HEAD_BRANCH = 'schema/title-limit';
+const HEAD_SHA = 'd'.repeat(40);
 const tsxLoader = createRequire(import.meta.url).resolve('tsx/esm');
 
 async function readFileText(path: string): Promise<string> {
@@ -173,7 +175,7 @@ interface Outcome {
 /** Input values as the runner resolves them: defaults first, then the scenario's overrides. */
 function inputValues(
   overrides: Readonly<Record<string, string>>,
-  github: Record<string, string>,
+  github: Readonly<Record<string, unknown>>,
 ): Record<string, string> {
   const values: Record<string, string> = {};
   for (const input of action.inputs) {
@@ -194,13 +196,15 @@ function lookup(path: string, scope: Scope): string {
         ? (value as Record<string, unknown>)[part]
         : undefined;
   }
+  // The runner expands a missing property to an empty string, so a push event has no head SHA.
+  if (value === undefined || value === null) return '';
   if (typeof value !== 'string') throw new Error(`Unknown expression: ${path}`);
   return value;
 }
 
 interface Scope {
   readonly inputs: Record<string, string>;
-  readonly github: Record<string, string>;
+  readonly github: Readonly<Record<string, unknown>>;
   readonly steps: Record<string, { outputs: Record<string, string> }>;
 }
 
@@ -242,11 +246,11 @@ async function runAction(scenario: Scenario): Promise<Outcome> {
   await writeFile(argvLog, '');
   const eventPayload =
     scenario.event === 'pull_request'
-      ? { action: 'synchronize', pull_request: { number: 7 } }
+      ? { action: 'synchronize', pull_request: { number: 7, head: { sha: HEAD_SHA } } }
       : { ref: 'refs/heads/main' };
   await writeFile(eventFile, JSON.stringify(eventPayload));
 
-  const github = { token: RUNNER_TOKEN, event_name: scenario.event };
+  const github = { token: RUNNER_TOKEN, event_name: scenario.event, event: eventPayload };
   const scope: Scope = {
     inputs: inputValues(scenario.inputs ?? {}, github),
     github,
@@ -261,6 +265,7 @@ async function runAction(scenario: Scenario): Promise<Outcome> {
     GITHUB_EVENT_NAME: scenario.event,
     GITHUB_EVENT_PATH: eventFile,
     GITHUB_BASE_REF: 'main',
+    ...(scenario.event === 'pull_request' ? { GITHUB_HEAD_REF: HEAD_BRANCH } : {}),
     GITHUB_REPOSITORY: 'acme/shop',
     GITHUB_API_URL: apiRoot,
     RUNNER_TEMP: temp,
@@ -380,15 +385,31 @@ describe('action steps run offline', () => {
     async () => {
       const outcome = await runAction({ event: 'pull_request' });
 
+      expect(outcome.argv.slice(0, 2)).toEqual(['--base', 'origin/main']);
+      expect(outcome.summary).toContain('## Schema impact');
+    },
+    LONG,
+  );
+
+  it(
+    'labels the report with the pull request branch and head commit, not the merge commit',
+    async () => {
+      const outcome = await runAction({ event: 'pull_request' });
+
       expect(outcome.argv).toEqual([
         '--base',
         'origin/main',
+        '--base-name',
+        'main',
         '--studio',
         'fixtures/studio',
         '--format',
         'md',
+        '--head-name',
+        HEAD_BRANCH,
+        '--head-sha',
+        HEAD_SHA,
       ]);
-      expect(outcome.summary).toContain('## Schema impact');
     },
     LONG,
   );
@@ -399,6 +420,8 @@ describe('action steps run offline', () => {
       const outcome = await runAction({ event: 'push', inputs: { comment: 'true' } });
 
       expect(outcome.argv[1]).toBe('origin/main');
+      expect(outcome.argv).not.toContain('--head-name');
+      expect(outcome.argv).not.toContain('--head-sha');
       expect(apiRequests).toEqual([]);
     },
     LONG,
@@ -415,10 +438,16 @@ describe('action steps run offline', () => {
       expect(outcome.argv).toEqual([
         '--base',
         'origin/main',
+        '--base-name',
+        'main',
         '--studio',
         'fixtures/studio',
         '--format',
         'md',
+        '--head-name',
+        HEAD_BRANCH,
+        '--head-sha',
+        HEAD_SHA,
         '--fail-on',
         'any',
         '--skip-validation',

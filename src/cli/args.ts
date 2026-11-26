@@ -12,6 +12,10 @@ export interface CliOptions {
   readonly skipValidation: boolean;
   readonly project?: string;
   readonly dataset?: string;
+  /** Names and commit shown in the report. They label the refs and don't change what is compared. */
+  readonly baseName?: string;
+  readonly headName?: string;
+  readonly headSha?: string;
   /** Set when migration scaffolds are wanted. Without `dir`, the Studio's own migrations folder is used. */
   readonly migrations?: { readonly dir?: string };
 }
@@ -23,6 +27,14 @@ export type ParsedArgs =
   | { readonly kind: 'comment'; readonly file: string };
 
 const FORMATS: readonly OutputFormat[] = ['table', 'md', 'json'];
+
+const FULL_SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/i;
+
+function label(value: string | undefined, flag: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (value.trim() === '') throw new Error(`${flag} needs a name.`);
+  return value;
+}
 
 function isFormat(value: string): value is OutputFormat {
   return (FORMATS as readonly string[]).includes(value);
@@ -43,6 +55,9 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       'skip-validation': { type: 'boolean' },
       project: { type: 'string' },
       dataset: { type: 'string' },
+      'base-name': { type: 'string' },
+      'head-name': { type: 'string' },
+      'head-sha': { type: 'string' },
       migrations: { type: 'boolean' },
       'migrations-dir': { type: 'string' },
       help: { type: 'boolean', short: 'h' },
@@ -64,6 +79,13 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
   if (migrationsDir !== undefined && migrationsDir.trim() === '') {
     throw new Error('--migrations-dir needs a directory.');
   }
+  const headSha = values['head-sha'];
+  if (headSha !== undefined && !FULL_SHA.test(headSha)) {
+    throw new Error('--head-sha needs a full commit SHA.');
+  }
+  const baseName = label(values['base-name'], '--base-name');
+  const headName = label(values['head-name'], '--head-name');
+
   const migrations =
     migrationsDir !== undefined || values.migrations === true
       ? { ...(migrationsDir === undefined ? {} : { dir: migrationsDir }) }
@@ -79,6 +101,9 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       skipValidation: values['skip-validation'] === true,
       ...(values.project === undefined ? {} : { project: values.project }),
       ...(values.dataset === undefined ? {} : { dataset: values.dataset }),
+      ...(baseName === undefined ? {} : { baseName }),
+      ...(headName === undefined ? {} : { headName }),
+      ...(headSha === undefined ? {} : { headSha }),
       ...(migrations === undefined ? {} : { migrations }),
     },
   };
