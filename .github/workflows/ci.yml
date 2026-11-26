@@ -42,3 +42,29 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+  integration:
+    name: Integration
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      SANITY_AUTH_TOKEN: ${{ secrets.SANITY_AUTH_TOKEN }}
+      SANITY_STUDIO_PROJECT_ID: ${{ vars.SANITY_PROJECT_ID }}
+      SANITY_STUDIO_DATASET: ${{ vars.SANITY_DATASET }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # Skips cleanly while the secret and variables are unset.
+      - name: Integration tests
+        run: pnpm test:integration
