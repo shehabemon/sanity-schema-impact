@@ -7,25 +7,28 @@ Shows, on every pull request, how a Sanity schema change affects content that al
 Run the CLI from a checkout of the branch you want to check. `--studio` is the Studio directory inside the repo, and `--base` is the ref to compare with (default `main`):
 
 ```bash
-pnpm install                       # in the Studio directory first
+npm install                        # or pnpm/yarn: the Studio's dependencies must be installed
 sanity-schema-impact --studio ./studio --base main
 ```
 
 It needs a Viewer token in `SANITY_AUTH_TOKEN`, and a project and dataset from `--project` and `--dataset` or from `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET`. Locally, Node's `--env-file` flag is enough: `node --env-file=.env dist/cli.js --studio ./fixtures/studio`.
 
-| Option                   | Meaning                                                                                               |
-| ------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `--studio <dir>`         | Studio directory inside the repo (required).                                                          |
-| `--base <ref>`           | Ref to compare with (default `main`).                                                                 |
-| `--base-name <name>`     | Name shown for the base in the report (default: the `--base` value).                                  |
-| `--head-name <name>`     | Name shown for the head in the report (default: the checked-out branch).                              |
-| `--head-sha <sha>`       | Full commit SHA shown for the head in the report (default: the checked-out commit).                   |
-| `--format <format>`      | `table` (default), `md` for a PR comment, or `json`.                                                  |
-| `--fail-on <rules>`      | Comma-separated rules that make the exit code 1. Default `data-loss,newly-required,validation-error`. |
-| `--skip-validation`      | Skip the validation diff. Only the structural diff and the counts run.                                |
-| `--project`, `--dataset` | Override the Sanity project and dataset.                                                              |
-| `--migrations`           | Write migration scaffolds to `<studio>/migrations`. See below.                                        |
-| `--migrations-dir <dir>` | Write migration scaffolds to `<dir>` instead. Turns `--migrations` on.                                |
+In an npm or yarn workspace the `sanity` binary sits in the repository root's `node_modules`, and the CLI looks for it there too. The base is checked out as a git worktree, which has none of the head's untracked files. So the CLI links the head's `node_modules` folders and its `.env` files into the base for the run, and removes the links afterwards. A variable the Studio reads at load time that the CLI doesn't set has to be named with `--pass-env`.
+
+| Option                   | Meaning                                                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `--studio <dir>`         | Studio directory inside the repo (required).                                                                  |
+| `--base <ref>`           | Ref to compare with (default `main`).                                                                         |
+| `--base-name <name>`     | Name shown for the base in the report (default: the `--base` value).                                          |
+| `--head-name <name>`     | Name shown for the head in the report (default: the checked-out branch).                                      |
+| `--head-sha <sha>`       | Full commit SHA shown for the head in the report (default: the checked-out commit).                           |
+| `--format <format>`      | `table` (default), `md` for a PR comment, or `json`.                                                          |
+| `--fail-on <rules>`      | Comma-separated rules that make the exit code 1. Default `data-loss,newly-required,validation-error`.         |
+| `--skip-validation`      | Skip the validation diff. Only the structural diff and the counts run.                                        |
+| `--pass-env <names>`     | Comma-separated `SANITY_STUDIO_*` variables passed to the Studio's Sanity processes. Other names are refused. |
+| `--project`, `--dataset` | Override the Sanity project and dataset.                                                                      |
+| `--migrations`           | Write migration scaffolds to `<studio>/migrations`. See below.                                                |
+| `--migrations-dir <dir>` | Write migration scaffolds to `<dir>` instead. Turns `--migrations` on.                                        |
 
 Rules: `data-loss` (a removed field or type still has documents), `newly-required`, `options-changed`, `validation-error` (an introduced error), `validation-warning` (an introduced warning or error), `any`, `none`.
 
@@ -159,15 +162,16 @@ jobs:
 
 **Never use `pull_request_target`.** That event runs the workflow with the secrets while it checks out code from the pull request. The Studio runs its own code (custom validators) during the check, so a fork could read the token. Use `pull_request`.
 
-| Input             | Default               | Meaning                                                                                              |
-| ----------------- | --------------------- | ---------------------------------------------------------------------------------------------------- |
-| `studio`          | required              | Studio directory inside the repository.                                                              |
-| `base`            | `''`                  | Branch to compare with. Empty means the pull request's base branch, or `main` outside pull requests. |
-| `fail-on`         | `''`                  | Rules that fail the step, as in the CLI. Empty uses the CLI defaults.                                |
-| `skip-validation` | `false`               | Skip the validation diff.                                                                            |
-| `install`         | `false`               | Run `pnpm install --frozen-lockfile` at the repository root before the check. pnpm only.             |
-| `comment`         | `true`                | Create or update the pull request comment. Only on `pull_request` events.                            |
-| `github-token`    | `${{ github.token }}` | Token for the comment. Needs `pull-requests: write`.                                                 |
+| Input             | Default               | Meaning                                                                                                     |
+| ----------------- | --------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `studio`          | required              | Studio directory inside the repository.                                                                     |
+| `base`            | `''`                  | Branch to compare with. Empty means the pull request's base branch, or `main` outside pull requests.        |
+| `fail-on`         | `''`                  | Rules that fail the step, as in the CLI. Empty uses the CLI defaults.                                       |
+| `skip-validation` | `false`               | Skip the validation diff.                                                                                   |
+| `install`         | `false`               | Run `pnpm install --frozen-lockfile` at the repository root before the check. pnpm only.                    |
+| `pass-env`        | `''`                  | `SANITY_STUDIO_*` variables for the Studio's Sanity processes, as in `--pass-env`. Other names are refused. |
+| `comment`         | `true`                | Create or update the pull request comment. Only on `pull_request` events.                                   |
+| `github-token`    | `${{ github.token }}` | Token for the comment. Needs `pull-requests: write`.                                                        |
 
 The step exits with the CLI's exit code, so `fail-on` decides whether the check fails. A comment that can't be posted is reported as a failed step, and it doesn't hide the check's result.
 

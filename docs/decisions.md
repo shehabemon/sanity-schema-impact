@@ -326,6 +326,7 @@ Short entries: context, choice, trade-off. Newest at the bottom.
 - **Context:** A fresh worktree has no `node_modules`, and an install per run would add minutes. Spike 7 ran the Sanity CLI fine through a symlink.
 - **Choice:** The base Studio gets a symlink to the head Studio's `node_modules`. Cleanup removes that symlink before it removes the worktree, so the real folder is never touched.
 - **Trade-off:** Base and head share one install. If the two branches pin different `sanity` versions, the base extract still uses the head's version. Running the check on a branch that changes the Sanity version isn't reliable yet.
+- **Follow-up:** entry 95 links every `node_modules` on the path to the Studio, not only the Studio's own.
 
 ## 55. Exit codes and the default rules
 
@@ -548,3 +549,39 @@ Short entries: context, choice, trade-off. Newest at the bottom.
 - **Context:** The tags I was asked for, `actions/checkout@v7.0.1`, `actions/setup-node@v7.1.0` and `pnpm/action-setup@v6.1.1`, all exist in each repository's tag list. I read each `action.yml` at its tag.
 - **Choice:** The workflows and `action.yml` pin those tags. The inputs in use (`node-version`, `cache`, and no `version` on pnpm/action-setup, which reads `packageManager`) are still accepted.
 - **Trade-off:** Tags can be moved, unlike SHAs. The repo already pins tags, and the README asks consumers to pin a full SHA, so I left the style alone.
+
+## 92. Validation markers may have no code
+
+- **Context:** Sanity v3 writes `documents validate` markers with a path, level and message, and no code. The parser required a string code, so a v3 Studio stopped the check with a malformed-output error on its first marker. Dogfooding found it. The fixtures were all v4 output.
+- **Choice:** `code` is optional. A marker with no code, or an empty one, gets an empty `code`. The marker key and the grouping work the same for both.
+- **Trade-off:** A marker without a code and one with a code count as the same problem when path and message match. That only matters if base and head ran on different Studio versions, which they don't in practice.
+
+## 93. Unknown-field markers from v3 fold onto the removed field's row
+
+- **Context:** v4 reports a field the schema no longer has as `object.unknown-field`. v3 only says `Field 'x' does not exist on type 'y'`. Without a change, a removed field would show twice on a v3 Studio: once on the structural row and once as a validation group.
+- **Choice:** A group with no code folds the same way when the field named in the message is the last segment of the row's path, and the document type matches the row. The type in the message is the object's type, so I don't compare it with the document type.
+- **Trade-off:** The match depends on the wording of the v3 message. If Sanity rewords it, those markers show as ordinary validation rows again. Nothing is hidden in that case, but the report gets noisier.
+
+## 94. No separate guard for output whose markers all fail to parse
+
+- **Context:** I wanted an error when the output has markers but none of them parse, so an empty result is never returned by mistake. The parser already throws on the first marker it can't read, and it gives the line number.
+- **Choice:** I didn't add a second check. It can't fire on its own, and dead code is one more thing to keep tested. The existing error stays the guard.
+- **Trade-off:** The message is the generic "Malformed validation output on line N.", which doesn't say the marker's shape was the problem. Changing that text would touch the existing tests, and the line number already points at the problem.
+
+## 95. The `sanity` binary and the base links are found up to the repository root
+
+- **Context:** npm and yarn workspaces install packages in the root's `node_modules`. The binary lookup and the base link only checked the Studio folder, so a workspace Studio had no binary in the base worktree.
+- **Choice:** The binary is searched from the Studio folder up to the repository root, nearest first. For the base, each `node_modules` the head has on that path is linked to the same place in the worktree, unless the base already has one. These links go through the same cleanup as the others. The error no longer names a package manager.
+- **Trade-off:** Base and head still share one install, as in entry 54. A base that needs a different root install than the head will get the head's.
+
+## 96. The Studio's `.env` files are linked into the base
+
+- **Context:** The Sanity CLI reads `.env` from the Studio folder when it loads the Studio. The base worktree has none, because `.env` is gitignored. The base Studio failed on a missing project ID, while the head worked because its own `.env` was there.
+- **Choice:** Every `.env` and `.env.*` file in the head Studio that the base doesn't have is linked into the base Studio. The links go through the same cleanup. A file the base already has, such as a committed `.env.example`, is left alone.
+- **Trade-off:** The base Studio now reads the head's local `.env`, including any token set there. The head's own run already reads that file. In CI there is no `.env` unless the workflow writes one.
+
+## 97. `--pass-env` takes only `SANITY_STUDIO_*` names
+
+- **Context:** A Studio can need a variable that isn't in the child process's environment (entry 74). Passing the whole environment would give Studio code the Sanity and GitHub tokens.
+- **Choice:** `--pass-env NAME[,NAME]` copies the named values into both the extract and the validate child. Only names starting with `SANITY_STUDIO_` are accepted. The CLI refuses other names when it parses the arguments, and the adapter checks again before it builds a child's environment. A rejected value is not echoed, because a mistyped argument could hold a token. A name that is set nowhere is an error. The Action passes its `pass-env` input through `env:`.
+- **Trade-off:** The rule is a naming convention. A token stored under a `SANITY_STUDIO_*` name would reach Studio code, and the flag can't tell it apart from a setting.
