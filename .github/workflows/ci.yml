@@ -16,11 +16,11 @@ jobs:
       matrix:
         node-version: [22.x, 24.x]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6.1.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
@@ -53,11 +53,11 @@ jobs:
       SANITY_STUDIO_PROJECT_ID: ${{ vars.SANITY_PROJECT_ID }}
       SANITY_STUDIO_DATASET: ${{ vars.SANITY_DATASET }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6.1.1
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: 22.x
           cache: pnpm
