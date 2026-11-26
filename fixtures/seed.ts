@@ -7,11 +7,14 @@ import {
   placeholderAssetIds,
 } from './images.js';
 import {
+  RELEASE_ID,
   draftIdOf,
   generateFixtureDocuments,
+  generateReleaseVersions,
   summarise,
   type FixtureDocument,
   type FixtureSummary,
+  type ReleaseVersion,
 } from './generate.js';
 
 /**
@@ -26,6 +29,9 @@ import {
  *   pnpm seed             upload the fixture images, then createOrReplace every fixture document
  *   pnpm seed --reset     delete fixture-ID documents first, then seed
  *
+ * The fixture release (RELEASE_ID) is created after the documents, with versions of some posts.
+ * Re-running skips anything that already exists.
+ *
  * Image assets are uploaded first. Sanity derives asset IDs from a content hash, so re-running
  * uploads the same bytes and gets the same IDs back. The Content Lake rejects strong references
  * to assets that do not exist, so documents are written only after their assets exist.
@@ -34,6 +40,7 @@ import {
 const BATCH_SIZE = 100;
 const API_VERSION = '2025-02-19';
 const DATASET_PREFIX = 'fixture';
+const RELEASE_TITLE = 'Fixture release';
 
 interface Options {
   dryRun: boolean;
@@ -65,14 +72,47 @@ function printSummary(summary: FixtureSummary): void {
   }
 }
 
-/** Fixture IDs for --reset: every published ID plus its drafts.* counterpart. */
+/**
+ * Fixture IDs for --reset: every published ID plus its drafts.* counterpart, and the release
+ * versions. The release document itself is kept.
+ */
 function fixtureIdsFor(docs: readonly FixtureDocument[]): string[] {
   const ids = new Set<string>();
   for (const doc of docs) {
     ids.add(doc._id);
     ids.add(doc._id.startsWith('drafts.') ? doc._id.slice('drafts.'.length) : draftIdOf(doc._id));
   }
+  for (const version of generateReleaseVersions(docs)) ids.add(version.document._id);
   return [...ids];
+}
+
+/** Creates the fixture release and any of its versions that are missing. */
+async function seedRelease(
+  client: SanityClient,
+  versions: readonly ReleaseVersion[],
+): Promise<void> {
+  const release = await client.getDocument(`_.releases.${RELEASE_ID}`);
+  if (release === undefined) {
+    await client.releases.create({ releaseId: RELEASE_ID, metadata: { title: RELEASE_TITLE } });
+    console.log(`release ${RELEASE_ID}: created`);
+  } else {
+    console.log(`release ${RELEASE_ID}: already exists`);
+  }
+
+  let created = 0;
+  for (const version of versions) {
+    const existing = await client.getDocument(version.document._id);
+    if (existing !== undefined) continue;
+    await client.createVersion({
+      document: version.document,
+      publishedId: version.publishedId,
+      releaseId: RELEASE_ID,
+    });
+    created++;
+  }
+  console.log(
+    `release versions: ${String(created)} created, ${String(versions.length - created)} already present`,
+  );
 }
 
 /** Uploads each fixture PNG and returns the asset IDs Sanity assigned, in FIXTURE_IMAGES order. */
@@ -99,6 +139,7 @@ async function run(): Promise<void> {
   if (options.dryRun) {
     const docs = generateFixtureDocuments(placeholderAssetIds());
     printSummary(summarise(docs));
+    console.log(`Release ${RELEASE_ID}: ${String(generateReleaseVersions(docs).length)} versions`);
     console.log('Dry run: no network calls made, nothing written. Image refs are placeholders.');
     return;
   }
@@ -148,6 +189,8 @@ async function run(): Promise<void> {
     await tx.commit();
     console.log(`batch ${i + 1}/${batches.length}: wrote ${batch.length} documents`);
   }
+
+  await seedRelease(client, generateReleaseVersions(docs));
   console.log('Done.');
 }
 

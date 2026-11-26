@@ -5,7 +5,9 @@ import {
   DRAFT_ONLY_POST_COUNT,
   POST_COUNT,
   PRODUCT_COUNT,
+  RELEASE_ID,
   generateFixtureDocuments,
+  generateReleaseVersions,
   summarise,
   type FixtureDocument,
 } from '../../fixtures/generate.js';
@@ -206,3 +208,73 @@ describe('deliberate gaps', () => {
     expect(rate).toBeLessThan(0.3);
   });
 });
+
+describe('release versions', () => {
+  const releaseVersions = generateReleaseVersions(docs);
+  const versionIds = releaseVersions.map((v) => v.document._id);
+
+  it('versions eight published posts in one release', () => {
+    expect(releaseVersions).toHaveLength(8);
+    expect(versionIds).toEqual([
+      'versions.rFixture01.post-0040',
+      'versions.rFixture01.post-0080',
+      'versions.rFixture01.post-0120',
+      'versions.rFixture01.post-0160',
+      'versions.rFixture01.post-0200',
+      'versions.rFixture01.post-0240',
+      'versions.rFixture01.post-0280',
+      'versions.rFixture01.post-0320',
+    ]);
+    expect(RELEASE_ID).toBe('rFixture01');
+  });
+
+  it('names the published post each version belongs to', () => {
+    for (const version of releaseVersions) {
+      expect(version.document._id).toBe(`versions.${RELEASE_ID}.${version.publishedId}`);
+      expect(published.map((d) => d._id)).toContain(version.publishedId);
+    }
+  });
+
+  it('changes the title of every version', () => {
+    for (const version of releaseVersions) {
+      const original = posts.find((p) => p._id === version.publishedId);
+      expect(version.document.title).not.toBe(original?.title);
+      expect(version.document._type).toBe('post');
+    }
+  });
+
+  it('keeps the rest of each post, including its image presence', () => {
+    for (const version of releaseVersions) {
+      const original = posts.find((p) => p._id === version.publishedId);
+      expect(version.document['featuredImage']).toEqual(original?.['featuredImage']);
+      expect(version.document['slug']).toEqual(original?.['slug']);
+    }
+  });
+
+  it('points references only at published documents', () => {
+    const publishedIds = new Set(published.map((d) => d._id));
+    const refs = releaseVersions.flatMap((v) => collectDocRefsFrom(v.document));
+    expect(refs.length).toBeGreaterThan(0);
+    expect(refs.filter((r) => !publishedIds.has(r))).toEqual([]);
+  });
+
+  it('is deterministic', () => {
+    expect(generateReleaseVersions(docs)).toEqual(releaseVersions);
+  });
+
+  it('stays out of the main document set', () => {
+    expect(docs.some((d) => d._id.startsWith('versions.'))).toBe(false);
+  });
+});
+
+function collectDocRefsFrom(value: unknown, out: string[] = []): string[] {
+  if (Array.isArray(value)) value.forEach((v) => collectDocRefsFrom(v, out));
+  else if (value && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    if (obj._type === 'reference' && typeof obj._ref === 'string') out.push(obj._ref);
+    Object.entries(obj)
+      .filter(([key]) => key !== 'asset')
+      .forEach(([, v]) => collectDocRefsFrom(v, out));
+  }
+  return out;
+}

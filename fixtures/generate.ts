@@ -232,6 +232,43 @@ export function generateFixtureDocuments(assetIds: readonly string[]): FixtureDo
   return docs;
 }
 
+export const RELEASE_ID = 'rFixture01';
+/** Number of published posts that get a version in the fixture release. */
+export const RELEASE_POST_COUNT = 8;
+/** The release versions every RELEASE_POST_STEP-th published post (40, 80, ..., 320). */
+export const RELEASE_POST_STEP = 40;
+
+export interface ReleaseVersion {
+  /** The published document this version would replace when the release is published. */
+  publishedId: string;
+  document: FixtureDocument;
+}
+
+/**
+ * Copies some published posts into `versions.<RELEASE_ID>.*` with a changed title.
+ * Pure: same input, same output.
+ */
+export function generateReleaseVersions(docs: readonly FixtureDocument[]): ReleaseVersion[] {
+  const published = new Map(
+    docs.filter((d) => !isDraftId(d._id)).map((d): [string, FixtureDocument] => [d._id, d]),
+  );
+  return Array.from({ length: RELEASE_POST_COUNT }, (_, k) => {
+    const publishedId = postId(RELEASE_POST_STEP * (k + 1));
+    const post = published.get(publishedId);
+    if (post === undefined || post._type !== 'post') {
+      throw new Error(`Release post ${publishedId} is not in the fixture.`);
+    }
+    return {
+      publishedId,
+      document: {
+        ...post,
+        _id: `versions.${RELEASE_ID}.${publishedId}`,
+        title: `${String(post.title)} (release edit)`,
+      },
+    };
+  });
+}
+
 export interface TypeCounts {
   published: number;
   drafts: number;
