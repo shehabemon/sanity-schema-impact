@@ -9,7 +9,7 @@ export interface ImpactQuery {
   readonly params: Record<string, unknown>;
 }
 
-interface Segment {
+export interface Segment {
   readonly name: string;
   readonly array: boolean;
 }
@@ -37,7 +37,7 @@ export function parsePath(path: string): Segment[] {
 const dotted = (segments: readonly Segment[]): string => segments.map((s) => s.name).join('.');
 
 /** Expression that is true when the document (or array member) has data at the path. */
-function hasData(segments: readonly Segment[]): string {
+export function hasData(segments: readonly Segment[]): string {
   const first = segments.findIndex((s) => s.array);
   if (first === -1) return `defined(${dotted(segments)})`;
   const head = dotted(segments.slice(0, first + 1));
