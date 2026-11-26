@@ -9,7 +9,7 @@ export const post = defineType({
       name: 'title',
       title: 'Title',
       type: 'string',
-      validation: (rule) => rule.required(),
+      validation: (rule) => rule.required().max(40),
     }),
     // Deliberately not required: the fixture needs posts without a slug.
     defineField({
