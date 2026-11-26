@@ -95,7 +95,8 @@ runs:
         set -eu
         cd "$GITHUB_ACTION_PATH"
         corepack enable
-        pnpm install --frozen-lockfile
+        # The action's own repository also holds the fixture Studio. Only the root package is needed here.
+        pnpm install --frozen-lockfile --filter sanity-schema-impact
         pnpm build
 
     - name: Install Studio dependencies
