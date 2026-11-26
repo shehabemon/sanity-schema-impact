@@ -24,6 +24,10 @@ inputs:
     description: Run pnpm install --frozen-lockfile at the repository root before the check.
     required: false
     default: 'false'
+  pass-env:
+    description: Comma-separated SANITY_STUDIO_* variables for the Studio's Sanity processes, for example SANITY_STUDIO_ID. Other names are refused.
+    required: false
+    default: ''
   comment:
     description: Create or update the pull request comment. Only runs on pull_request events.
     required: false
@@ -116,6 +120,7 @@ runs:
         STUDIO: ${{ inputs.studio }}
         FAIL_ON: ${{ inputs.fail-on }}
         SKIP_VALIDATION: ${{ inputs.skip-validation }}
+        PASS_ENV: ${{ inputs.pass-env }}
       run: |
         set -u
         args=(--base "$BASE_REF" --base-name "$BASE_NAME" --studio "$STUDIO" --format md)
@@ -128,6 +133,9 @@ runs:
         fi
         if [ "$SKIP_VALIDATION" = "true" ]; then
           args+=(--skip-validation)
+        fi
+        if [ -n "$PASS_ENV" ]; then
+          args+=(--pass-env "$PASS_ENV")
         fi
         # The exit code is read below, after the report is saved, so a failing rule doesn't stop the steps after it.
         set +e

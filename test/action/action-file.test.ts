@@ -17,6 +17,7 @@ describe('action.yml', () => {
       'fail-on': '',
       'skip-validation': 'false',
       install: 'false',
+      'pass-env': '',
       comment: 'true',
       'github-token': '${{ github.token }}',
     });
@@ -77,6 +78,13 @@ describe('action.yml', () => {
 
     expect(check?.env['HEAD_SHA']).toBe('${{ github.event.pull_request.head.sha }}');
     expect(check?.run).not.toContain('github.event');
+  });
+
+  it('passes pass-env through the step environment and never inside the script', () => {
+    const check = action.steps.find((step) => step.name === 'Run the schema impact check');
+
+    expect(check?.env['PASS_ENV']).toBe('${{ inputs.pass-env }}');
+    expect(check?.run).toContain('--pass-env "$PASS_ENV"');
   });
 
   it('passes the comment token through the step environment', () => {

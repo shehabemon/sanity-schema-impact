@@ -516,3 +516,31 @@ describe('action steps run offline', () => {
     LONG,
   );
 });
+
+describe('action pass-env input', () => {
+  it(
+    'forwards the names to the CLI, and passes nothing when the input is empty',
+    async () => {
+      const named = await runAction({
+        event: 'push',
+        inputs: { 'pass-env': 'SANITY_STUDIO_ID,SANITY_STUDIO_DATASET' },
+      });
+      expect(named.argv).toEqual([
+        '--base',
+        'origin/main',
+        '--base-name',
+        'main',
+        '--studio',
+        'fixtures/studio',
+        '--format',
+        'md',
+        '--pass-env',
+        'SANITY_STUDIO_ID,SANITY_STUDIO_DATASET',
+      ]);
+
+      const empty = await runAction({ event: 'push' });
+      expect(empty.argv).not.toContain('--pass-env');
+    },
+    LONG,
+  );
+});
