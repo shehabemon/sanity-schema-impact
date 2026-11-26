@@ -12,6 +12,25 @@ function parseErrors(source: string): string[] {
   );
 }
 
+/**
+ * Names the file imports from sanity/migrate or takes as a hook parameter, which the body never
+ * uses. Strict Studios reject these under noUnusedLocals and noUnusedParameters.
+ */
+function unusedBindings(source: string): string[] {
+  const imported = [...source.matchAll(/^import \{ ([^}]+) \} from "sanity\/migrate";$/gm)].flatMap(
+    (match) => (match[1] ?? '').split(', '),
+  );
+  const parameters = [...source.matchAll(/document\((\w+)\)/g)].map((match) => match[1] ?? '');
+  const code = source
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('//'))
+    .join('\n');
+  return [...imported, ...parameters].filter((name) => {
+    const uses = code.match(new RegExp(`\\b${name}\\b`, 'g')) ?? [];
+    return uses.length < 2;
+  });
+}
+
 const templates: Record<string, MigrationTemplate> = {
   'a top-level field': { kind: 'unset', docType: 'post', path: 'featuredImage' },
   'a nested field': { kind: 'unset', docType: 'post', path: 'seo.title' },
@@ -90,6 +109,28 @@ describe('renderMigration', () => {
     expect(source).toContain('return [];');
     expect(source).not.toMatch(/^\s*return delete_\(/m);
   });
+
+  it('imports only defineMigration for a removed type, and keeps delete_ commented out', () => {
+    const source = renderMigration({ kind: 'delete', docType: 'category' });
+
+    expect(source).toContain('import { defineMigration } from "sanity/migrate";');
+    expect(source).toContain('// import { delete_ } from "sanity/migrate";');
+    expect(source).not.toMatch(/^import .*delete_/m);
+  });
+
+  it('takes no document parameter for a removed type', () => {
+    const source = renderMigration({ kind: 'delete', docType: 'category' });
+
+    expect(source).toContain('document() {');
+    expect(source).not.toContain('document(doc)');
+  });
+
+  it.each(Object.entries(templates))(
+    'leaves no imported name or hook parameter unused in %s',
+    (_, template) => {
+      expect(unusedBindings(renderMigration(template))).toEqual([]);
+    },
+  );
 
   it('says which change the file was scaffolded for, in the header', () => {
     const source = renderMigration({ kind: 'unset', docType: 'post', path: 'seo.title' });

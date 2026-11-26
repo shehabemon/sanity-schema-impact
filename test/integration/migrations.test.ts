@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { cp, mkdtemp, rm, symlink } from 'node:fs/promises';
+import { cp, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -171,6 +171,45 @@ describe.skipIf(!enabled)('migration scaffolds against the fixture dataset', () 
         timeoutMs: MIGRATION_TIMEOUT_MS,
       });
 
+      expect(result.stdout, result.stdout).toBe('');
+      expect(result.code).toBe(0);
+    },
+    MIGRATION_TIMEOUT_MS,
+  );
+
+  it(
+    'writes scaffolds that pass with noUnusedLocals and noUnusedParameters, as strict Studios set them',
+    async () => {
+      const config = join(scratch, 'tsconfig.migrations.json');
+      await writeFile(
+        config,
+        `${JSON.stringify(
+          {
+            extends: './tsconfig.json',
+            compilerOptions: { noUnusedLocals: true, noUnusedParameters: true },
+            include: ['migrations/**/*.ts'],
+          },
+          null,
+          2,
+        )}\n`,
+      );
+      const env = { PATH: process.env['PATH'] ?? '', HOME: process.env['HOME'] ?? '' };
+      const listed = await runCommand({
+        cmd: tscBinary,
+        args: ['--listFilesOnly', '-p', config],
+        cwd: scratch,
+        env,
+        timeoutMs: MIGRATION_TIMEOUT_MS,
+      });
+      expect(listed.stdout).toContain(join('migrations', 'unset-post-featured-image', 'index.ts'));
+
+      const result = await runCommand({
+        cmd: tscBinary,
+        args: ['--noEmit', '-p', config],
+        cwd: scratch,
+        env,
+        timeoutMs: MIGRATION_TIMEOUT_MS,
+      });
       expect(result.stdout, result.stdout).toBe('');
       expect(result.code).toBe(0);
     },

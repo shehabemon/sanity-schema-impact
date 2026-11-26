@@ -157,17 +157,18 @@ function deleteSource(docType: string): string {
   typeName(docType);
 
   return defineFile({
-    imports: 'defineMigration, delete_',
+    imports: 'defineMigration',
     origin: `removed-type ${docType}`,
+    notes: [
+      'TODO: Deleting fails while other documents still reference this one, and the content is gone',
+      'for good. Fix those references first. Then add delete_ to the imports, add doc to document()',
+      'and return delete_(doc._id) in place of the empty array.',
+      'import { delete_ } from "sanity/migrate";',
+    ],
     title: `Delete ${docType} documents`,
     docType,
-    signature: 'document(doc)',
-    hook: [
-      '// TODO: Deleting fails while other documents still reference this one, and the content is',
-      '// gone for good. Find and fix those references first, then uncomment the line below.',
-      '// return delete_(doc._id);',
-      'return [];',
-    ],
+    signature: 'document()',
+    hook: ['// return delete_(doc._id);', 'return [];'],
   });
 }
 
