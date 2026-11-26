@@ -481,3 +481,18 @@ $ (same command)
 - **Runtime:** about 8 s per run (5 s workspace load, under 1 s to validate 549 documents). Base and head together are about 16 s, plus the export and a Studio install in each tree. I didn't measure the install here (Phase 2: 1.1 s offline with a warm store).
 
 **Impact on Phase 5b:** the layers in the architecture notes still hold. The validation layer shells out to the CLI once per tree. Two things need a guard in the tool before 5b: the 300-byte drop, and a count check for ndjson. The 557 vs 549 download gap is unexplained. The Phase 5 section of the project notes still says `--file` validated 0 documents. I didn't change that section, so it needs updating by hand.
+
+## 10. Migration runner (dry runs)
+
+Checked against `fixture-dev` on 26 Nov with `sanity migrations run <id> --dry-run --no-progress --no-confirm --dataset fixture-dev -p <project>` from a copy of the fixture Studio. The token was `SANITY_AUTH_TOKEN` from `.env`. Versions: `sanity` 6.25.0, `@sanity/cli` 8.35.0, `@sanity/migrate` 8.0.5.
+
+- **Location:** `<studio>/migrations/<id>/index.ts`. The folder name is the ID. `sanity migrations list` reads only that folder and says "No migrations folder found" when it's missing.
+- **Source of documents:** the migrate library streams the dataset export and applies `documentTypes` in code. It parses `filter` with groq-js and evaluates it locally. Only `_.`-prefixed system IDs are dropped, so drafts (`drafts.*`) and versions (`versions.*`) reach the migration.
+- **Counts agree with the impact step:**
+  - `post.featuredImage` removed: impact 249 published, 32 drafts and 5 in releases, 286 in total. The dry run printed 286 patch headers, 286 distinct IDs, 32 `drafts.` IDs and 5 `versions.` IDs.
+  - `post.featuredImage` renamed to `heroImage`: 286 distinct documents, with two operations each (`setIfMissing` on `heroImage`, `unset()` on `featuredImage`), so 572 headers.
+  - `product.variants[].price` removed: 100 documents counted and 100 distinct documents in the dry run. The 193 variant members all have a `_key`, and the dry run planned 193 keyed operations.
+  - `product` removed as a type: the scaffold plans no patches, as intended.
+- **Output format:** a header per operation, `[patch] [<type>] <id>`, then one `└─` line per path step. Keyed paths print as `└─ [_key=="v0"]`. The header line has a trailing space.
+- **Type-check:** the generated files type-check with the fixture Studio's `tsconfig.json`, and a planted error in the same folder is reported. So the `sanity/migrate` typings are checked, not just the syntax.
+- **Not checked:** a real run. The test only uses `--dry-run`, and the tool never writes to the dataset.
