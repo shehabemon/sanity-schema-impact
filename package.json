@@ -7,6 +7,12 @@
   "engines": {
     "node": ">=22.12"
   },
+  "bin": {
+    "sanity-schema-impact": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
   "packageManager": "pnpm@12.23.0",
   "scripts": {
     "build": "tsup",

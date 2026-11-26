@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-import { VERSION } from './version.js';
+import { defaultDeps, runCli } from './cli/run.js';
 
-if (process.argv.includes('--version') || process.argv.includes('-v')) {
-  console.log(VERSION);
-} else {
-  console.log(`sanity-schema-impact ${VERSION} (CLI not implemented yet)`);
-}
+process.exitCode = await runCli(process.argv.slice(2), defaultDeps());
