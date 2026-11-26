@@ -1,4 +1,5 @@
 import { createClient } from '@sanity/client';
+import { redact as redactSecrets } from './process.js';
 
 /** The only read the impact step needs. Tests pass a fake that implements this. */
 export interface SanityReader {
@@ -14,7 +15,7 @@ export interface SanityReaderOptions {
 
 /** Removes every occurrence of a secret from a message. */
 export function redact(message: string, secret: string): string {
-  return secret === '' ? message : message.split(secret).join('[redacted]');
+  return redactSecrets(message, [secret]);
 }
 
 /**
