@@ -1,13 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { CommandRunner } from '../../src/adapters/process.js';
 import type { SanityReader } from '../../src/adapters/sanity.js';
 import type { SignalSource } from '../../src/cleanup.js';
 import { colourEnabled, runCli, type RunDeps } from '../../src/cli/run.js';
+import type { FetchLike } from '../../src/github/comment.js';
 import { VERSION } from '../../src/version.js';
+
+const refuseFetch: FetchLike = () => Promise.reject(new Error('fetch should not be called'));
 
 function harness(
   env: Record<string, string | undefined> = {},
   isTTY = false,
+  fetch: FetchLike = refuseFetch,
 ): {
   deps: RunDeps;
   out: string[];
@@ -31,9 +38,110 @@ function harness(
       runner: unused,
       createReader: () => reader,
       signals,
+      fetch,
     },
   };
 }
+
+const PR_EVENT = { action: 'synchronize', pull_request: { number: 7 } };
+const TOKEN = 'ghs_comment_token_for_test';
+
+describe('runCli comment', () => {
+  let dir: string;
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'comment-cli-'));
+  });
+
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  let fileCount = 0;
+
+  async function files(event: unknown): Promise<{ eventPath: string; reportPath: string }> {
+    fileCount += 1;
+    const eventPath = join(dir, `event-${String(fileCount)}.json`);
+    const reportPath = join(dir, `report-${String(fileCount)}.md`);
+    await writeFile(eventPath, JSON.stringify(event));
+    await writeFile(reportPath, '<!-- sanity-schema-impact -->\n## Schema impact\n');
+    return { eventPath, reportPath };
+  }
+
+  function env(eventPath: string, extra: Record<string, string> = {}): Record<string, string> {
+    return {
+      GITHUB_TOKEN: TOKEN,
+      GITHUB_REPOSITORY: 'acme/shop',
+      GITHUB_EVENT_PATH: eventPath,
+      GITHUB_API_URL: 'https://ghe.example.com/api/v3',
+      ...extra,
+    };
+  }
+
+  it('warns and exits 0 when the event is not a pull request', async () => {
+    const { eventPath, reportPath } = await files({ ref: 'refs/heads/main' });
+    const { deps, err } = harness(env(eventPath));
+
+    expect(await runCli(['comment', '--file', reportPath], deps)).toBe(0);
+    expect(err.join('')).toContain('::warning::');
+  });
+
+  it('creates the comment on the pull request named in the event', async () => {
+    const { eventPath, reportPath } = await files(PR_EVENT);
+    const calls: string[] = [];
+    const fetch: FetchLike = (url, init) => {
+      calls.push(`${String(init?.method)} ${url}`);
+      return Promise.resolve(
+        url.includes('/issues/7/comments?')
+          ? Response.json([])
+          : Response.json({ id: 5 }, { status: 201 }),
+      );
+    };
+    const { deps, out } = harness(env(eventPath), false, fetch);
+
+    expect(await runCli(['comment', '--file', reportPath], deps)).toBe(0);
+    expect(calls).toEqual([
+      'GET https://ghe.example.com/api/v3/repos/acme/shop/issues/7/comments?per_page=100',
+      'POST https://ghe.example.com/api/v3/repos/acme/shop/issues/7/comments',
+    ]);
+    expect(out.join('')).toBe('Created comment 5 on acme/shop#7.\n');
+  });
+
+  it('exits 2 when GITHUB_TOKEN is not set', async () => {
+    const { eventPath, reportPath } = await files(PR_EVENT);
+    const { deps, err } = harness(env(eventPath, { GITHUB_TOKEN: '' }));
+
+    expect(await runCli(['comment', '--file', reportPath], deps)).toBe(2);
+    expect(err.join('')).toContain('GITHUB_TOKEN is not set.');
+  });
+
+  it('exits 2 when the event path is not set', async () => {
+    const { reportPath } = await files(PR_EVENT);
+    const { deps, err } = harness({ GITHUB_TOKEN: TOKEN, GITHUB_REPOSITORY: 'acme/shop' });
+
+    expect(await runCli(['comment', '--file', reportPath], deps)).toBe(2);
+    expect(err.join('')).toContain('GITHUB_EVENT_PATH is not set.');
+  });
+
+  it('exits 2 when the report file does not exist', async () => {
+    const { eventPath } = await files(PR_EVENT);
+    const { deps, err } = harness(env(eventPath));
+
+    expect(await runCli(['comment', '--file', join(dir, 'missing.md')], deps)).toBe(2);
+    expect(err.join('')).toContain('No report at');
+  });
+
+  it('exits 2 and keeps the token out of the message when the API refuses', async () => {
+    const { eventPath, reportPath } = await files(PR_EVENT);
+    const fetch: FetchLike = () =>
+      Promise.resolve(Response.json({ message: `Bad credentials for ${TOKEN}` }, { status: 401 }));
+    const { deps, err } = harness(env(eventPath), false, fetch);
+
+    expect(await runCli(['comment', '--file', reportPath], deps)).toBe(2);
+    expect(err.join('')).toContain('status 401');
+    expect(err.join('')).not.toContain(TOKEN);
+  });
+});
 
 describe('runCli', () => {
   it('prints the usage and exits 0 for --help', async () => {

@@ -73,4 +73,23 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs(['-h'])).toEqual({ kind: 'help' });
     expect(parseCliArgs(['--version'])).toEqual({ kind: 'version' });
   });
+
+  it('reads the report file for the comment subcommand', () => {
+    expect(parseCliArgs(['comment', '--file', 'schema-impact.md'])).toEqual({
+      kind: 'comment',
+      file: 'schema-impact.md',
+    });
+  });
+
+  it('requires the report file for the comment subcommand', () => {
+    expect(() => parseCliArgs(['comment'])).toThrow('Missing --file <report.md>.');
+  });
+
+  it('keeps the run flags out of the comment subcommand', () => {
+    expect(() => parseCliArgs(['comment', '--file', 'r.md', '--studio', 'x'])).toThrow(/studio/);
+  });
+
+  it('shows help for the comment subcommand', () => {
+    expect(parseCliArgs(['comment', '--help'])).toEqual({ kind: 'help' });
+  });
 });

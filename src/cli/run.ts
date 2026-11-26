@@ -1,4 +1,4 @@
-import { realpath } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { redact, runCommand, type CommandRunner } from '../adapters/process.js';
 import {
@@ -7,6 +7,12 @@ import {
   type SanityReaderOptions,
 } from '../adapters/sanity.js';
 import { cleanOnSignal, createCleanup, type SignalSource } from '../cleanup.js';
+import {
+  readPullRequestContext,
+  upsertComment,
+  type FetchLike,
+  type PullRequestContext,
+} from '../github/comment.js';
 import { runPipeline } from '../pipeline.js';
 import { toJson } from '../report/json.js';
 import { toMarkdown } from '../report/markdown.js';
@@ -25,6 +31,7 @@ export interface RunDeps {
   readonly runner: CommandRunner;
   readonly createReader: (options: SanityReaderOptions) => SanityReader;
   readonly signals: SignalSource;
+  readonly fetch: FetchLike;
 }
 
 export function defaultDeps(): RunDeps {
@@ -36,12 +43,14 @@ export function defaultDeps(): RunDeps {
     runner: runCommand,
     createReader: createSanityReader,
     signals: process,
+    fetch: globalThis.fetch,
   };
 }
 
 const USAGE = `sanity-schema-impact ${VERSION}
 
 Usage: sanity-schema-impact --studio <dir> [options]
+       sanity-schema-impact comment --file <report.md>
 
 Options:
   --studio <dir>        Studio directory in this repository (required)
@@ -54,9 +63,15 @@ Options:
   -h, --help            Show this help
   -v, --version         Show the version
 
+Comment:
+  Creates or updates the pull request comment with the markdown report (--format md).
+  Reads GITHUB_TOKEN, GITHUB_REPOSITORY, GITHUB_EVENT_PATH and GITHUB_API_URL. Outside a
+  pull request event it warns and exits 0.
+
 Environment:
   SANITY_AUTH_TOKEN     Viewer token. Required.
   NO_COLOR              Turns colour off in the table output.
+  GITHUB_API_URL        API root for GitHub Enterprise (default https://api.github.com).
 `;
 
 /** Colour is for a terminal, and NO_COLOR (any non-empty value) turns it off. */
@@ -84,6 +99,7 @@ export async function runCli(argv: readonly string[], deps: RunDeps): Promise<nu
     deps.stdout.write(`${VERSION}\n`);
     return 0;
   }
+  if (parsed.kind === 'comment') return runComment(parsed.file, deps);
 
   const { options } = parsed;
   const projectId = options.project ?? deps.env['SANITY_STUDIO_PROJECT_ID'] ?? '';
@@ -134,6 +150,67 @@ export async function runCli(argv: readonly string[], deps: RunDeps): Promise<nu
     for (const failure of await cleanup.run()) {
       deps.stderr.write(`Cleanup failed: ${redact(failure, [token])}\n`);
     }
+  }
+}
+
+/** Posts the report as the pull request comment. Exit 0 also covers events that aren't pull requests. */
+async function runComment(file: string, deps: RunDeps): Promise<number> {
+  const { env } = deps;
+  const eventPath = env['GITHUB_EVENT_PATH'] ?? '';
+  if (eventPath === '') {
+    deps.stderr.write('GITHUB_EVENT_PATH is not set.\n');
+    return 2;
+  }
+
+  let target: PullRequestContext | null;
+  try {
+    const event = JSON.parse(await readFile(eventPath, 'utf8')) as unknown;
+    target = readPullRequestContext(event, env);
+  } catch (error) {
+    deps.stderr.write(`${errorText(error)}\n`);
+    return 2;
+  }
+  if (target === null) {
+    deps.stderr.write('::warning::Not a pull request event, so no comment was posted.\n');
+    return 0;
+  }
+
+  const token = env['GITHUB_TOKEN'] ?? '';
+  if (token.trim() === '') {
+    deps.stderr.write('GITHUB_TOKEN is not set.\n');
+    return 2;
+  }
+
+  let body: string;
+  try {
+    body = await readFile(file, 'utf8');
+  } catch {
+    deps.stderr.write(`No report at ${file}.\n`);
+    return 2;
+  }
+  if (body.trim() === '') {
+    deps.stderr.write(`The report at ${file} is empty.\n`);
+    return 2;
+  }
+
+  const apiUrl = env['GITHUB_API_URL'] ?? '';
+  try {
+    const result = await upsertComment({
+      token,
+      owner: target.owner,
+      repo: target.repo,
+      number: target.number,
+      body,
+      fetch: deps.fetch,
+      ...(apiUrl === '' ? {} : { apiUrl }),
+    });
+    const verb = result.action === 'created' ? 'Created' : 'Updated';
+    const where = `${target.owner}/${target.repo}#${String(target.number)}`;
+    deps.stdout.write(`${verb} comment ${String(result.id)} on ${where}.\n`);
+    return 0;
+  } catch (error) {
+    deps.stderr.write(`${redact(errorText(error), [token])}\n`);
+    return 2;
   }
 }
 

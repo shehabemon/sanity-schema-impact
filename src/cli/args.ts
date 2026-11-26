@@ -17,7 +17,8 @@ export interface CliOptions {
 export type ParsedArgs =
   | { readonly kind: 'help' }
   | { readonly kind: 'version' }
-  | { readonly kind: 'run'; readonly options: CliOptions };
+  | { readonly kind: 'run'; readonly options: CliOptions }
+  | { readonly kind: 'comment'; readonly file: string };
 
 const FORMATS: readonly OutputFormat[] = ['table', 'md', 'json'];
 
@@ -26,6 +27,8 @@ function isFormat(value: string): value is OutputFormat {
 }
 
 export function parseCliArgs(argv: readonly string[]): ParsedArgs {
+  if (argv[0] === 'comment') return parseCommentArgs(argv.slice(1));
+
   const { values } = parseArgs({
     args: [...argv],
     strict: true,
@@ -65,4 +68,20 @@ export function parseCliArgs(argv: readonly string[]): ParsedArgs {
       ...(values.dataset === undefined ? {} : { dataset: values.dataset }),
     },
   };
+}
+
+function parseCommentArgs(args: readonly string[]): ParsedArgs {
+  const { values } = parseArgs({
+    args: [...args],
+    strict: true,
+    allowPositionals: false,
+    options: {
+      file: { type: 'string' },
+      help: { type: 'boolean', short: 'h' },
+    },
+  });
+
+  if (values.help === true) return { kind: 'help' };
+  if (values.file === undefined) throw new Error('Missing --file <report.md>.');
+  return { kind: 'comment', file: values.file };
 }

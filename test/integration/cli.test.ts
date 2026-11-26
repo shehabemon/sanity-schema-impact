@@ -76,6 +76,7 @@ function deps(cwd: string, stdout: string[], stderr: string[]): RunDeps {
     runner: runCommand,
     createReader: createSanityReader,
     signals: { on: () => undefined, exit: () => undefined },
+    fetch: globalThis.fetch,
   };
 }
 
