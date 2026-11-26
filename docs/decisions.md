@@ -524,3 +524,27 @@ Short entries: context, choice, trade-off. Newest at the bottom.
 - **Context:** Impact counts drafts and release versions. The migration runner could have skipped them, and the counts would then have disagreed.
 - **Choice:** No filter excludes them. The live dry run planned patches on 32 drafts and 5 versions, and those numbers equal the impact counts. The `filter` uses the same expression as the impact query, `hasData`, so the two sides keep the same definition of "has data".
 - **Trade-off:** If a later migrate version starts skipping drafts, the integration test catches it, because the counts would no longer match.
+
+## 88. The report's labels come from flags the action sets, not from the checkout
+
+- **Context:** `actions/checkout` builds the merge commit on a `pull_request` event, so the head showed a detached SHA that nobody pushed. The base showed `origin/main`, which is the name git needs but not what anyone reads.
+- **Choice:** `--base-name`, `--head-name` and `--head-sha` only change the labels. The action sets them on `pull_request` events, with the branch from `GITHUB_HEAD_REF` and the commit from `pull_request.head.sha`, and passes `main` as the base name. Git still gets `origin/main`. Local runs don't pass them, so they look as before.
+- **Trade-off:** The head SHA in the report is the PR's commit, but the Studio that was extracted and validated is the merge commit. A reader could take the SHA for the thing that was checked. The report can't show both, so it shows the commit people push and review.
+
+## 89. The action's build installs only the root package
+
+- **Context:** `pnpm-workspace.yaml` also lists `fixtures/studio`. When the action is used from another repository, its checkout has the fixture Studio too, and the build step installed its Sanity dependencies for nothing.
+- **Choice:** `pnpm install --frozen-lockfile --filter sanity-schema-impact`. I checked in a scratch copy that the fixture's `node_modules` isn't created, the lockfile doesn't change, `pnpm build` still works, and a filtered install after a full install keeps the Studio's dependencies.
+- **Trade-off:** The filter names the package. Renaming the package in `package.json` breaks the build step, and the action-file test pins the string so that shows up in CI.
+
+## 90. The removed-type scaffold has no unused import or parameter
+
+- **Context:** The delete line was commented out, but its `delete_` import and `doc` parameter were still in the file. Strict Studios set `noUnusedLocals` and `noUnusedParameters`, and the file fails both.
+- **Choice:** The file imports only `defineMigration`, and the commented `delete_` import sits in the TODO above it. The hook is `document()`, with no parameter. The integration test type-checks the generated files with both flags on, and I confirmed the old file fails that check.
+- **Trade-off:** Whoever uncomments the delete also has to add the import and the parameter. That's two more edits, and the TODO lists them.
+
+## 91. Actions are pinned to tags that exist, and the inputs were checked at each one
+
+- **Context:** The tags I was asked for, `actions/checkout@v7.0.1`, `actions/setup-node@v7.1.0` and `pnpm/action-setup@v6.1.1`, all exist in each repository's tag list. I read each `action.yml` at its tag.
+- **Choice:** The workflows and `action.yml` pin those tags. The inputs in use (`node-version`, `cache`, and no `version` on pnpm/action-setup, which reads `packageManager`) are still accepted.
+- **Trade-off:** Tags can be moved, unlike SHAs. The repo already pins tags, and the README asks consumers to pin a full SHA, so I left the style alone.

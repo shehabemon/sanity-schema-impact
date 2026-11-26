@@ -17,6 +17,9 @@ It needs a Viewer token in `SANITY_AUTH_TOKEN`, and a project and dataset from `
 | ------------------------ | ----------------------------------------------------------------------------------------------------- |
 | `--studio <dir>`         | Studio directory inside the repo (required).                                                          |
 | `--base <ref>`           | Ref to compare with (default `main`).                                                                 |
+| `--base-name <name>`     | Name shown for the base in the report (default: the `--base` value).                                  |
+| `--head-name <name>`     | Name shown for the head in the report (default: the checked-out branch).                              |
+| `--head-sha <sha>`       | Full commit SHA shown for the head in the report (default: the checked-out commit).                   |
 | `--format <format>`      | `table` (default), `md` for a PR comment, or `json`.                                                  |
 | `--fail-on <rules>`      | Comma-separated rules that make the exit code 1. Default `data-loss,newly-required,validation-error`. |
 | `--skip-validation`      | Skip the validation diff. Only the structural diff and the counts run.                                |
@@ -133,7 +136,7 @@ jobs:
   schema-impact:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - uses: shehabemon/sanity-schema-impact@v0 # pin a full commit SHA in production
         env:
           SANITY_AUTH_TOKEN: ${{ secrets.SANITY_AUTH_TOKEN }}
@@ -149,7 +152,8 @@ jobs:
 - The Sanity values come from `env:`, not `with:`, so the token never appears in a workflow input.
 - The check needs the Studio's dependencies installed. Either set `install: 'true'` (runs `pnpm install --frozen-lockfile` at the repository root) or install them in an earlier step.
 - Pin a full commit SHA in production (`uses: shehabemon/sanity-schema-impact@<sha> # v0.x.y`). `@v0` is a placeholder until the first release.
-- The action builds the CLI from its own source on each run, with Node 22 and pnpm. The npm release will replace that with a pinned `npx` call.
+- The action builds the CLI from its own source on each run, with Node 22 and pnpm. The npm release will replace that with a pinned `npx` call. That build installs only the CLI's own dependencies, not the fixture Studio's.
+- On a pull request the report names the pull request's branch and head commit. The checkout is the merge commit, so the report doesn't show that SHA.
 
 **Pull requests from forks** don't receive secrets. The action then prints a warning, the check is skipped, and the job passes.
 
