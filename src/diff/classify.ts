@@ -136,11 +136,13 @@ function pairRenames(
     const toGroup = addedByShape.get(key) ?? [];
     const from = fromGroup[0];
     const to = toGroup[0];
-    if (fromGroup.length === 1 && toGroup.length === 1 && from !== undefined && to !== undefined) {
-      renames.push({ from, to });
-      renamedFrom.add(from.path);
-      renamedTo.add(to.path);
+    if (fromGroup.length !== 1 || toGroup.length !== 1 || from === undefined || to === undefined) {
+      continue;
     }
+    if (isPlainScalar(from.info) && !sharesNameWord(from.path, to.path)) continue;
+    renames.push({ from, to });
+    renamedFrom.add(from.path);
+    renamedTo.add(to.path);
   }
 
   return {
@@ -161,6 +163,31 @@ function groupByShape(entries: readonly Entry[]): Map<string, Entry[]> {
     groups.set(key, group);
   }
   return groups;
+}
+
+/**
+ * Text, number and boolean fields with no option list. Their shape is the same for many fields,
+ * so a rename between them also needs the names to agree.
+ */
+function isPlainScalar(info: FieldInfo): boolean {
+  const scalar = info.kind === 'string' || info.kind === 'number' || info.kind === 'boolean';
+  return scalar && info.typeName === undefined && valuesOf(info).length === 0;
+}
+
+/** The lower-cased words of the last path segment, split on camelCase, underscores and dashes. */
+function nameWords(path: string): string[] {
+  return path
+    .slice(path.lastIndexOf('.') + 1)
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[\s_-]+/)
+    .filter((word) => word !== '');
+}
+
+function sharesNameWord(a: string, b: string): boolean {
+  const words = new Set(nameWords(a));
+  return nameWords(b).some((word) => words.has(word));
 }
 
 function parentOf(path: string): string {

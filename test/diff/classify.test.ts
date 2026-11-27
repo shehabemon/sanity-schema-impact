@@ -268,7 +268,7 @@ describe('diffSchemas', () => {
     ];
     const head = [
       documentEntry('product', {
-        variants: attr(array(named('variant', { code: attr(str()) }))),
+        variants: attr(array(named('variant', { productSku: attr(str()) }))),
       }),
     ];
 
@@ -277,11 +277,76 @@ describe('diffSchemas', () => {
         kind: 'possible-rename',
         docType: 'product',
         from: 'variants[].sku',
-        to: 'variants[].code',
+        to: 'variants[].productSku',
         before: { kind: 'string', required: false },
         after: { kind: 'string', required: false },
       },
     ]);
+  });
+
+  it('pairs plain text fields whose names share a word', () => {
+    const base = [documentEntry('page', { heroTitle: attr(str()) })];
+    const head = [documentEntry('page', { pageTitle: attr(str()) })];
+
+    expect(diff(base, head)).toEqual([
+      {
+        kind: 'possible-rename',
+        docType: 'page',
+        from: 'heroTitle',
+        to: 'pageTitle',
+        before: { kind: 'string', required: false },
+        after: { kind: 'string', required: false },
+      },
+    ]);
+  });
+
+  it('compares name words without regard to case or separator style', () => {
+    const base = [documentEntry('page', { hero_title: attr(str()) })];
+    const head = [documentEntry('page', { PageTitle: attr(str()) })];
+
+    expect(diff(base, head)[0]).toMatchObject({ kind: 'possible-rename', from: 'hero_title' });
+  });
+
+  it('does not pair plain text fields whose names share no word', () => {
+    const base = [documentEntry('page', { dynamicRoute: attr(str()) })];
+    const head = [documentEntry('page', { summary: attr(str(), true) })];
+
+    expect(diff(base, head)).toEqual([
+      {
+        kind: 'removed-field',
+        docType: 'page',
+        path: 'dynamicRoute',
+        before: { kind: 'string', required: false },
+      },
+      {
+        kind: 'added-field',
+        docType: 'page',
+        path: 'summary',
+        after: { kind: 'string', required: true },
+      },
+    ]);
+  });
+
+  it('keeps pairing other shapes whose names share no word', () => {
+    const base = [documentEntry('page', { dynamicRoute: attr(image()) })];
+    const head = [documentEntry('page', { summary: attr(image()) })];
+
+    expect(diff(base, head)[0]).toMatchObject({
+      kind: 'possible-rename',
+      from: 'dynamicRoute',
+      to: 'summary',
+    });
+  });
+
+  it('keeps pairing option lists whose names share no word', () => {
+    const base = [documentEntry('post', { status: attr(union(str('draft'), str('live'))) })];
+    const head = [documentEntry('post', { state: attr(union(str('draft'), str('live'))) })];
+
+    expect(diff(base, head)[0]).toMatchObject({
+      kind: 'possible-rename',
+      from: 'status',
+      to: 'state',
+    });
   });
 
   it('leaves an ambiguous rename as separate removed and added fields', () => {
