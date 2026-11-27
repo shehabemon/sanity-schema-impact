@@ -99,7 +99,7 @@ runs:
       shell: bash
       env:
         # Must match the version in package.json. test/action/action-file.test.ts checks it.
-        CLI_VERSION: 0.1.0
+        CLI_VERSION: 0.1.1
       run: |
         set -eu
         # Installed outside the repository, so the user's lockfile and node_modules are not touched.

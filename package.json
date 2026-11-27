@@ -1,6 +1,6 @@
 {
   "name": "sanity-schema-impact",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shows how a Sanity schema change affects existing content on every pull request.",
   "keywords": [
     "sanity",
