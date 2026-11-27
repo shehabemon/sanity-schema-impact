@@ -615,3 +615,33 @@ Short entries: context, choice, trade-off. Newest at the bottom.
 - **Context:** The re-run printed `Not measured: adding a field changes no existing document` with no field name, so the row told the reader nothing. It also stayed in the main table, because skipped rows were always shown.
 - **Choice:** Every row starts with what the change does, measured or not (``Adding `page.summary`: not measured, …``). Changes that can't touch existing documents, such as an added field, a relaxed required flag or an option list that only grows, count as quiet rows and go in the collapsed block. A change whose query failed stays in the main table.
 - **Trade-off:** An added field now sits in the collapsed block, even though a reviewer may want to see it. It's still listed, and the JSON output is unchanged.
+
+## 103. The Action installs a pinned npm version instead of building from source
+
+- **Context:** The Action built the CLI from its own source on every run: corepack, a filtered pnpm install in the action's checkout, then the build. That took most of the run, and it depended on the action repository's lockfile.
+- **Choice:** The install step runs `npm install --prefix` into `$RUNNER_TEMP` at `CLI_VERSION` in `action.yml`. The check and comment steps call the binary that the install step outputs. The Action no longer installs the fixture Studio, because the CLI doesn't need it. `test/action/action-file.test.ts` compares `CLI_VERSION` with `package.json`, so the two can't drift apart.
+- **Trade-off:** Every Action release needs a matching npm release, published first. In return the run is faster, each tag runs an exact CLI version, and nothing is installed in the user's repository.
+
+## 104. MIT license
+
+- **Context:** The package is going to npm and the GitHub Marketplace, and both expect a license. The repository had none.
+- **Choice:** MIT, with the copyright held by me. The LICENSE file is at the repo root and ships in the tarball.
+- **Trade-off:** MIT lets someone fork the tool into a closed product without giving anything back. For a CLI that people run in their own CI, I'm fine with that.
+
+## 105. No npm provenance for the first publish
+
+- **Context:** npm provenance attaches a signed statement that says where the package was built. npm only issues it for builds from CI with an OIDC identity. The first publish comes from my laptop.
+- **Choice:** `publishConfig` sets only the access level. I publish 0.1.0 from the laptop, and the first release has no provenance statement.
+- **Trade-off:** Users can't check where the 0.1.0 tarball was built. Moving the publish into a release workflow, which can use provenance, is a follow-up.
+
+## 106. User docs in README, contributor docs in CONTRIBUTING
+
+- **Context:** The README was written for someone working on the repo. Setup, the fixture Studio and the layout came before the usage, which is the wrong order for the npm or Marketplace page.
+- **Choice:** README.md covers what the tool does, an example comment, the Action and CLI quick starts, token setup, security and limitations. Development setup, environment variables, the fixture project, the integration tests and the layout moved to CONTRIBUTING.md, which also has a short release checklist.
+- **Trade-off:** There are two files to keep in step. A flag change needs an update in README.md, and a change to the contributor commands needs one in CONTRIBUTING.md.
+
+## 107. The dogfood workflow installs from npm too
+
+- **Context:** `schema-impact.yml` runs the local action with `uses: ./`. With entry 103 it installs the pinned version from npm, which doesn't exist until 0.1.0 is published.
+- **Choice:** I left the workflow unchanged. The npm release comes before any pull request that touches the paths the workflow watches. A separate input to build from source would add a second route through the Action, and nothing else would exercise it.
+- **Trade-off:** Until 0.1.0 is on npm, a pull request that touches `src/`, `action.yml` or the workflow fails its dogfood check. The workflow runs only on pull requests, so main is not affected.
