@@ -2,8 +2,27 @@
   "name": "sanity-schema-impact",
   "version": "0.1.0-beta.1",
   "description": "Shows how a Sanity schema change affects existing content on every pull request.",
+  "keywords": [
+    "sanity",
+    "sanity-io",
+    "schema",
+    "migration",
+    "github-action",
+    "pull-request",
+    "groq",
+    "cms"
+  ],
+  "license": "MIT",
+  "author": "Shehab Hasan",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shehabemon/sanity-schema-impact.git"
+  },
+  "homepage": "https://github.com/shehabemon/sanity-schema-impact#readme",
+  "bugs": {
+    "url": "https://github.com/shehabemon/sanity-schema-impact/issues"
+  },
   "type": "module",
-  "private": true,
   "engines": {
     "node": ">=22.12"
   },
@@ -13,9 +32,13 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "packageManager": "pnpm@12.23.0",
   "scripts": {
     "build": "tsup",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
