@@ -19,7 +19,7 @@ import { runPipeline } from '../pipeline.js';
 import { describeResult } from '../report/describe.js';
 import { toJson } from '../report/json.js';
 import { toMarkdown } from '../report/markdown.js';
-import type { Report } from '../report/model.js';
+import { NO_FOLDS, type Report } from '../report/model.js';
 import { toTable } from '../report/table.js';
 import { resolvePassEnv } from '../studio-env.js';
 import { VERSION } from '../version.js';
@@ -256,7 +256,9 @@ async function reportScaffolds(report: Report, root: string, deps: RunDeps): Pro
   const noun = written === 1 ? 'scaffold' : 'scaffolds';
   deps.stderr.write(`${String(written)} migration ${noun} written to ${root}.\n`);
   for (const item of plan.notScaffolded) {
-    deps.stderr.write(`Not scaffolded: ${describeResult(item.result, 0)} (${item.reason}).\n`);
+    deps.stderr.write(
+      `Not scaffolded: ${describeResult(item.result, NO_FOLDS)} (${item.reason}).\n`,
+    );
   }
 }
 

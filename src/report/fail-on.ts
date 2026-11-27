@@ -1,5 +1,5 @@
 import type { Report } from './model.js';
-import { visibleGroups } from './model.js';
+import { ruleGroups } from './model.js';
 
 export const RULES = [
   'data-loss',
@@ -46,7 +46,7 @@ export function parseFailOn(value: string | undefined): FailRule[] {
 /** Returns the rules that matched, in the order they were asked for. */
 export function evaluate(report: Report, rules: readonly FailRule[]): FailRule[] {
   if (rules.includes('none')) return [];
-  const groups = visibleGroups(report);
+  const groups = ruleGroups(report);
   const counted = report.changes.filter(
     (result) => 'published' in result && result.published + result.drafts + result.versions > 0,
   );

@@ -1,5 +1,13 @@
-import { describeResult } from './describe.js';
-import { foldUnknownFields, ruleLabel, visibleGroups, type RefInfo, type Report } from './model.js';
+import { describeResult, documentsPhrase } from './describe.js';
+import {
+  hasNoImpact,
+  NO_FOLDS,
+  rowFolds,
+  ruleLabel,
+  visibleGroups,
+  type RefInfo,
+  type Report,
+} from './model.js';
 import type { MarkerGroup } from '../validation/diff.js';
 
 /** The Action looks for this line to find and update its own comment. */
@@ -39,19 +47,45 @@ function refText(ref: RefInfo): string {
 }
 
 function groupRow(group: MarkerGroup): string {
-  const documents = `${String(group.published)} published, ${String(group.drafts)} drafts, ${String(group.versions)} in releases`;
   const rule = ruleLabel(group.code, truncate(group.message));
-  return `| ${group.level} | ${escapeText(group.documentType)} | ${escapeText(group.pathPattern)} | ${escapeText(rule)} | ${documents} |`;
+  return `| ${group.level} | ${escapeText(group.documentType)} | ${escapeText(group.pathPattern)} | ${escapeText(rule)} | ${documentsPhrase(group)} |`;
 }
 
+function changeTable(sentences: readonly string[]): string[] {
+  return ['| Schema change |', '|---|', ...sentences.map((sentence) => `| ${sentence} |`)];
+}
+
+/**
+ * One row per change. Changes with no documents go into a collapsed block below the rest, unless
+ * every change is like that, in which case the table stays as it is.
+ */
 function structureSection(report: Report): string[] {
   if (report.changes.length === 0) return ['No schema changes found.'];
-  const rawGroups = 'introduced' in report.validation ? report.validation.introduced : [];
-  const { flagged } = foldUnknownFields(report.changes, rawGroups);
-  const rows = report.changes.map(
-    (result, index) => `| ${escapeMarkdown(describeResult(result, flagged.get(index) ?? 0))} |`,
-  );
-  return ['| Schema change |', '|---|', ...rows];
+  const folds = rowFolds(report);
+  const rows = report.changes.map((result, index) => {
+    const fold = folds.get(index) ?? NO_FOLDS;
+    return {
+      sentence: escapeMarkdown(describeResult(result, fold)),
+      quiet: hasNoImpact(result, fold),
+    };
+  });
+  const shown = rows.filter((row) => !row.quiet).map((row) => row.sentence);
+  const quiet = rows.filter((row) => row.quiet).map((row) => row.sentence);
+  if (shown.length === 0) return changeTable(rows.map((row) => row.sentence));
+
+  const lines = changeTable(shown);
+  if (quiet.length > 0) {
+    lines.push(
+      '',
+      '<details>',
+      `<summary>${plural(quiet.length, 'more change', 'more changes')} with no existing documents</summary>`,
+      '',
+      ...changeTable(quiet),
+      '',
+      '</details>',
+    );
+  }
+  return lines;
 }
 
 function validationSection(report: Report): string[] {

@@ -151,6 +151,83 @@ describe('evaluate', () => {
     expect(evaluate(warning, ['validation-warning'])).toEqual(['validation-warning']);
   });
 
+  it('still matches validation-error for a Required group folded onto its newly required row', () => {
+    const requiredBody = {
+      change: {
+        kind: 'newly-required' as const,
+        docType: 'post',
+        path: 'title',
+        before: { kind: 'string' as const, required: false },
+        after: { kind: 'string' as const, required: true },
+      },
+      published: 3,
+      drafts: 0,
+      versions: 0,
+      sample: [],
+    };
+    const report = buildReport(
+      input({
+        impact: [requiredBody],
+        validation: {
+          introduced: [
+            {
+              ...titleError,
+              code: 'value.required',
+              message: 'Required',
+              pathPattern: 'title',
+              published: 3,
+              drafts: 0,
+              versions: 0,
+            },
+          ],
+          resolvedCount: 0,
+        },
+      }),
+    );
+
+    expect(report.summary.validationGroups).toBe(0);
+    expect(evaluate(report, ['validation-error'])).toEqual(['validation-error']);
+  });
+
+  it('still matches validation-error for a Required group on a child path of a newly required field', () => {
+    const report = buildReport(
+      input({
+        impact: [
+          {
+            change: {
+              kind: 'newly-required' as const,
+              docType: 'post',
+              path: 'slug',
+              before: { kind: 'slug' as const, required: false },
+              after: { kind: 'slug' as const, required: true },
+            },
+            published: 16,
+            drafts: 0,
+            versions: 0,
+            sample: [],
+          },
+        ],
+        validation: {
+          introduced: [
+            {
+              ...titleError,
+              code: 'value.required',
+              message: 'Required',
+              pathPattern: 'slug.current',
+              published: 16,
+              drafts: 0,
+              versions: 0,
+            },
+          ],
+          resolvedCount: 0,
+        },
+      }),
+    );
+
+    expect(report.summary.validationGroups).toBe(0);
+    expect(evaluate(report, ['validation-error'])).toEqual(['validation-error']);
+  });
+
   it('never matches a validation rule when validation was skipped', () => {
     const report = buildReport(
       input({ validation: { skipped: 'Skipped with --skip-validation.' } }),

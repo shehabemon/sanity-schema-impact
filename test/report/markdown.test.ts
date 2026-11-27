@@ -97,7 +97,7 @@ describe('toMarkdown', () => {
     );
 
     expect(text).toContain(
-      '| error | post | title | string.maximum-length: Must be at most 40 characters long | 129 published, 25 drafts, 6 in releases |',
+      '| error | post | title | string.maximum-length: Must be at most 40 characters long | 129 published documents (25 drafts, 6 in releases) |',
     );
   });
 
@@ -169,6 +169,183 @@ describe('toMarkdown', () => {
     expect(text).not.toContain('object.unknown-field');
   });
 
+  it('moves the rows with no documents into a collapsed block after the main table', () => {
+    const quiet: ImpactResult = {
+      change: { kind: 'removed-field', docType: 'post', path: 'old', before: field },
+      published: 0,
+      drafts: 0,
+      versions: 0,
+      sample: [],
+    };
+    const text = toMarkdown(buildReport(input({ impact: [removed, quiet] })));
+
+    expect(text).toContain(
+      [
+        '<details>',
+        '<summary>1 more change with no existing documents</summary>',
+        '',
+        '| Schema change |',
+        '|---|',
+        '| Removing `post.old`: no existing documents affected |',
+        '',
+        '</details>',
+      ].join('\n'),
+    );
+    expect(text.indexOf('| Removing `post.featuredImage`')).toBeLessThan(text.indexOf('<details>'));
+    expect(text.indexOf('<details>')).toBeLessThan(text.indexOf('| Removing `post.old`'));
+  });
+
+  it('pluralises the summary of the collapsed block', () => {
+    const quiet = (path: string): ImpactResult => ({
+      change: { kind: 'removed-field', docType: 'post', path, before: field },
+      published: 0,
+      drafts: 0,
+      versions: 0,
+      sample: [],
+    });
+    const text = toMarkdown(buildReport(input({ impact: [removed, quiet('a'), quiet('b')] })));
+
+    expect(text).toContain('<summary>2 more changes with no existing documents</summary>');
+  });
+
+  it('keeps every row visible when none of them has documents', () => {
+    const quiet: ImpactResult = {
+      change: { kind: 'removed-field', docType: 'post', path: 'old', before: field },
+      published: 0,
+      drafts: 0,
+      versions: 0,
+      sample: [],
+    };
+    const text = toMarkdown(buildReport(input({ impact: [quiet] })));
+
+    expect(text).not.toContain('<details>');
+    expect(text).toContain('| Removing `post.old`: no existing documents affected |');
+  });
+
+  it('keeps a row with no documents in the main table when the Studio still flags documents on it', () => {
+    const flagged: ImpactResult = {
+      change: {
+        kind: 'newly-required',
+        docType: 'product',
+        path: 'tags',
+        before: field,
+        after: field,
+      },
+      published: 0,
+      drafts: 0,
+      versions: 0,
+      sample: [],
+    };
+    const text = toMarkdown(
+      buildReport(
+        input({
+          impact: [flagged],
+          validation: {
+            introduced: [
+              group({
+                documentType: 'product',
+                pathPattern: 'tags',
+                code: 'value.required',
+                message: 'Required',
+                published: 2,
+                drafts: 0,
+                versions: 0,
+              }),
+            ],
+            resolvedCount: 0,
+          },
+        }),
+      ),
+    );
+
+    expect(text).not.toContain('<details>');
+    expect(text).toContain(
+      '| Making `product.tags` required: no existing documents affected; Studio flags 2 documents |',
+    );
+  });
+
+  it('folds a Required group onto its newly required row and says the Studio flags the same documents', () => {
+    const requiredBody: ImpactResult = {
+      change: {
+        kind: 'newly-required',
+        docType: 'product',
+        path: 'body',
+        before: field,
+        after: field,
+      },
+      published: 125,
+      drafts: 7,
+      versions: 0,
+      sample: [],
+    };
+    const text = toMarkdown(
+      buildReport(
+        input({
+          impact: [requiredBody],
+          validation: {
+            introduced: [
+              group({
+                documentType: 'product',
+                pathPattern: 'body',
+                code: 'value.required',
+                message: 'Required',
+                published: 125,
+                drafts: 7,
+                versions: 0,
+              }),
+            ],
+            resolvedCount: 0,
+          },
+        }),
+      ),
+    );
+
+    expect(text).toContain(
+      '| Making `product.body` required adds problems in 125 published documents (7 drafts); Studio flags the same documents |',
+    );
+    expect(text).toContain('No new validation problems.');
+    expect(text).not.toContain('value.required');
+  });
+
+  it('gives the Studio count on a newly required row when it differs from the change', () => {
+    const requiredTags: ImpactResult = {
+      change: {
+        kind: 'newly-required',
+        docType: 'product',
+        path: 'tags',
+        before: field,
+        after: field,
+      },
+      published: 2,
+      drafts: 0,
+      versions: 0,
+      sample: [],
+    };
+    const text = toMarkdown(
+      buildReport(
+        input({
+          impact: [requiredTags],
+          validation: {
+            introduced: [
+              group({
+                documentType: 'product',
+                pathPattern: 'tags',
+                code: 'value.required',
+                message: 'Required',
+                published: 130,
+                drafts: 0,
+                versions: 0,
+              }),
+            ],
+            resolvedCount: 0,
+          },
+        }),
+      ),
+    );
+
+    expect(text).toContain('; Studio flags 130 documents |');
+  });
+
   it('shows why validation was skipped', () => {
     const text = toMarkdown(
       buildReport(input({ validation: { skipped: 'Skipped with --skip-validation.' } })),
@@ -205,7 +382,7 @@ describe('toMarkdown with Sanity v3 markers', () => {
 
     const text = toMarkdown(report);
     expect(text).toContain(
-      "| warning | product | title | Field 'title' does not exist on type 'collectionTitle' | 129 published, 25 drafts, 6 in releases |",
+      "| warning | product | title | Field 'title' does not exist on type 'collectionTitle' | 129 published documents (25 drafts, 6 in releases) |",
     );
     expect(text).not.toContain(': Field');
   });

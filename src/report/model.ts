@@ -7,6 +7,9 @@ export const REPORT_VERSION = 1;
 /** The code the Studio's validator uses for a field the schema no longer defines. */
 export const UNKNOWN_FIELD_CODE = 'object.unknown-field';
 
+/** The code the Studio's validator uses for a required field that is missing or empty. */
+export const REQUIRED_CODE = 'value.required';
+
 /** Sanity v3 reports the same problem with no code, only this message. */
 const V3_UNKNOWN_FIELD = /^Field '([^']+)' does not exist on type '[^']+'$/;
 
@@ -35,7 +38,7 @@ export interface ReportSummary {
   /** Changes with at least one document counted. */
   readonly affected: number;
   readonly skipped: number;
-  /** Validation groups left after folding, see `foldUnknownFields`. */
+  /** Validation groups left after folding, see `foldGroups`. */
   readonly validationGroups: number;
 }
 
@@ -52,10 +55,28 @@ export interface Report {
   readonly failures: readonly string[];
 }
 
+/** A validation group that repeats a fact a structural row already states. */
+export type FoldKind = 'unknown-field' | 'required';
+
+/** Documents the Studio flags, per fold kind, on one change row. */
+export type RowFolds = Readonly<Record<FoldKind, number>>;
+
+export const NO_FOLDS: RowFolds = { 'unknown-field': 0, required: 0 };
+
 export interface Folded {
+  /** Groups that were not folded onto a row. */
   readonly groups: MarkerGroup[];
-  /** Index in `changes` -> documents flagged as unknown field on that row. */
-  readonly flagged: ReadonlyMap<number, number>;
+  /** Index in `changes` -> documents folded onto that row. Only rows with a fold have an entry. */
+  readonly rows: ReadonlyMap<number, RowFolds>;
+}
+
+interface Fold {
+  readonly matchesGroup: (group: MarkerGroup) => boolean;
+  readonly matchesChange: (change: Change) => boolean;
+  /** Whether a group at `groupPath` belongs on a row at `rowPath`, after the exact match fails. */
+  readonly matchesChildPath: (groupPath: string, rowPath: string) => boolean;
+  /** Combines the counts of two groups folded onto the same row. */
+  readonly combine: (current: number, next: number) => number;
 }
 
 function pathOf(change: Change): string | undefined {
@@ -93,38 +114,127 @@ function isUnknownFieldGroup(group: MarkerGroup): boolean {
   return named !== undefined && group.pathPattern.split('.').pop() === named;
 }
 
+/**
+ * True for the Studio's required check. Sanity v3 writes the message alone, so the message has to
+ * be exactly `Required` there.
+ */
+function isRequiredGroup(group: MarkerGroup): boolean {
+  if (group.code === REQUIRED_CODE) return true;
+  return group.code === '' && group.message === 'Required';
+}
+
+const FOLDS: Record<FoldKind, Fold> = {
+  'unknown-field': {
+    matchesGroup: isUnknownFieldGroup,
+    matchesChange: () => true,
+    matchesChildPath: () => false,
+    combine: (current, next) => current + next,
+  },
+  // Required groups on one row cover the same documents, so the row takes the largest count.
+  // A nested child such as `slug.current` also folds onto its parent's row.
+  required: {
+    matchesGroup: isRequiredGroup,
+    matchesChange: (change) => change.kind === 'newly-required',
+    matchesChildPath: (groupPath, rowPath) => groupPath.startsWith(`${rowPath}.`),
+    combine: Math.max,
+  },
+};
+
+const FOLD_KINDS: readonly FoldKind[] = ['unknown-field', 'required'];
+
 /** The rule text for a row: the code and message, or the message alone when there's no code. */
 export function ruleLabel(code: string, message: string): string {
   return code === '' ? message : `${code}: ${message}`;
 }
 
 /**
- * Removing a field makes every document that still holds it fail the Studio's unknown-field
- * check. That's the same fact as the structural row, so those groups are hidden and counted on
- * the row instead. The raw groups stay in the report.
+ * Hides the validation groups that repeat a structural row and counts their documents on the row.
+ * A removed field's documents fail the Studio's unknown-field check, and a newly required field's
+ * empty documents fail its required check. Both facts are already on the row, so the raw groups
+ * stay in the report and the table shows the row's note instead. `hide` lists the kinds to fold,
+ * and both kinds by default.
  */
-export function foldUnknownFields(
-  changes: readonly ImpactResult[],
-  groups: readonly MarkerGroup[],
-): Folded {
-  const flagged = new Map<number, number>();
-  const visible = groups.filter((group) => {
-    if (!isUnknownFieldGroup(group)) return true;
-    const index = changes.findIndex(
-      (result) =>
-        result.change.docType === group.documentType && pathOf(result.change) === group.pathPattern,
-    );
-    if (index === -1) return true;
-    flagged.set(index, (flagged.get(index) ?? 0) + documentsIn(group));
-    return false;
+/**
+ * The row a group folds onto. An exact path match wins. Otherwise a fold may take a child path,
+ * and the first such row is used.
+ */
+function findRow(changes: readonly ImpactResult[], group: MarkerGroup, fold: Fold): number {
+  const sameDocumentType = (result: ImpactResult): boolean =>
+    result.change.docType === group.documentType && fold.matchesChange(result.change);
+  const exact = changes.findIndex((result) => {
+    const path = pathOf(result.change);
+    return sameDocumentType(result) && path === group.pathPattern;
   });
-  return { groups: visible, flagged };
+  if (exact !== -1) return exact;
+  return changes.findIndex((result) => {
+    const path = pathOf(result.change);
+    return (
+      sameDocumentType(result) &&
+      path !== undefined &&
+      fold.matchesChildPath(group.pathPattern, path)
+    );
+  });
 }
 
-/** The validation groups the report shows and evaluates. Empty when validation was skipped. */
+export function foldGroups(
+  changes: readonly ImpactResult[],
+  groups: readonly MarkerGroup[],
+  hide: readonly FoldKind[] = FOLD_KINDS,
+): Folded {
+  const rows = new Map<number, RowFolds>();
+  const kept = groups.filter((group) => {
+    for (const kind of hide) {
+      const fold = FOLDS[kind];
+      if (!fold.matchesGroup(group)) continue;
+      const index = findRow(changes, group, fold);
+      if (index === -1) return true;
+      const current = rows.get(index) ?? NO_FOLDS;
+      rows.set(index, { ...current, [kind]: fold.combine(current[kind], documentsIn(group)) });
+      return false;
+    }
+    return true;
+  });
+  return { groups: kept, rows };
+}
+
+function foldedValidation(report: Report, hide?: readonly FoldKind[]): Folded {
+  if (!('introduced' in report.validation)) return { groups: [], rows: new Map() };
+  return foldGroups(report.changes, report.validation.introduced, hide);
+}
+
+/** The validation groups the report shows and counts. Empty when validation was skipped. */
 export function visibleGroups(report: Report): readonly MarkerGroup[] {
-  if (!('introduced' in report.validation)) return [];
-  return foldUnknownFields(report.changes, report.validation.introduced).groups;
+  return foldedValidation(report).groups;
+}
+
+/**
+ * The groups `--fail-on` evaluates. A folded Required group still counts, so hiding it doesn't
+ * stop the check failing. A folded unknown-field group doesn't count, as before.
+ */
+export function ruleGroups(report: Report): readonly MarkerGroup[] {
+  return foldedValidation(report, ['unknown-field']).groups;
+}
+
+/** The folds on each change row, keyed by index in `report.changes`. */
+export function rowFolds(report: Report): ReadonlyMap<number, RowFolds> {
+  return foldedValidation(report).rows;
+}
+
+/** Changes that can't touch existing documents, so they are never measured. */
+function touchesNoDocuments(change: Change): boolean {
+  if (change.kind === 'added-field' || change.kind === 'no-longer-required') return true;
+  return change.kind === 'options-changed' && change.removed.length === 0;
+}
+
+/**
+ * True for a change with no documents and nothing the Studio flags on its row. Those rows are the
+ * quiet ones. A change that can't touch documents is quiet too. Any other skipped change, such as
+ * a failed query, is always shown.
+ */
+export function hasNoImpact(result: ImpactResult, folds: RowFolds | undefined): boolean {
+  if (!('published' in result)) return touchesNoDocuments(result.change);
+  const flagged = folds === undefined ? 0 : folds['unknown-field'] + folds.required;
+  return result.published + result.drafts + result.versions === 0 && flagged === 0;
 }
 
 export function buildReport(input: ReportInput): Report {

@@ -1,5 +1,13 @@
-import { describeResult } from './describe.js';
-import { foldUnknownFields, ruleLabel, visibleGroups, type RefInfo, type Report } from './model.js';
+import { describeResult, documentsPhrase } from './describe.js';
+import {
+  hasNoImpact,
+  NO_FOLDS,
+  rowFolds,
+  ruleLabel,
+  visibleGroups,
+  type RefInfo,
+  type Report,
+} from './model.js';
 
 export interface TableOptions {
   readonly colour: boolean;
@@ -46,11 +54,19 @@ export function toTable(report: Report, options: TableOptions): string {
   if (report.changes.length === 0) {
     lines.push('  No schema changes found.');
   } else {
-    const rawGroups = 'introduced' in report.validation ? report.validation.introduced : [];
-    const { flagged } = foldUnknownFields(report.changes, rawGroups);
-    report.changes.forEach((result, index) => {
-      lines.push(`  ${describeResult(result, flagged.get(index) ?? 0)}`);
-    });
+    // Rows with documents, or with something the Studio flags, come first. Each part keeps its order.
+    const folds = rowFolds(report);
+    const rows = report.changes.map((result, index) => ({
+      result,
+      fold: folds.get(index) ?? NO_FOLDS,
+    }));
+    const ordered = [
+      ...rows.filter(({ result, fold }) => !hasNoImpact(result, fold)),
+      ...rows.filter(({ result, fold }) => hasNoImpact(result, fold)),
+    ];
+    for (const { result, fold } of ordered) {
+      lines.push(`  ${describeResult(result, fold)}`);
+    }
   }
 
   lines.push('', 'Validation');
@@ -68,7 +84,7 @@ export function toTable(report: Report, options: TableOptions): string {
           group.documentType,
           group.pathPattern,
           ruleLabel(group.code, group.message),
-          `${String(group.published)} published, ${String(group.drafts)} drafts, ${String(group.versions)} in releases`,
+          documentsPhrase(group),
         ]),
       ];
       lines.push(...columns(rows).map((line) => `  ${line}`));
