@@ -6,6 +6,9 @@ import { parseActionFile } from './parse-action.js';
 const text = await readFile(fileURLToPath(new URL('../../action.yml', import.meta.url)), 'utf8');
 const action = parseActionFile(text);
 const stepNames = action.steps.map((step) => step.name);
+const packageJson = JSON.parse(
+  await readFile(fileURLToPath(new URL('../../package.json', import.meta.url)), 'utf8'),
+) as { version: string };
 
 describe('action.yml', () => {
   it('declares the inputs with the defaults the README documents', () => {
@@ -51,7 +54,7 @@ describe('action.yml', () => {
       'Check the Sanity token',
       'Set up Node',
       'Resolve the base branch',
-      'Build the schema impact CLI',
+      'Install the schema impact CLI',
       'Install Studio dependencies',
       'Run the schema impact check',
       'Add the report to the job summary',
@@ -66,11 +69,23 @@ describe('action.yml', () => {
     expect(comment?.continueOnError).toBe(true);
   });
 
-  it('installs only the root package when it builds the CLI, not the Studio workspace', () => {
-    const build = action.steps.find((step) => step.name === 'Build the schema impact CLI');
+  it('installs the CLI from npm at the version pinned in package.json', () => {
+    const install = action.steps.find((step) => step.name === 'Install the schema impact CLI');
 
-    expect(build?.run).toContain('pnpm install --frozen-lockfile --filter sanity-schema-impact');
-    expect(build?.run).not.toMatch(/pnpm install --frozen-lockfile\s*$/m);
+    expect(install?.env['CLI_VERSION']).toBe(packageJson.version);
+    expect(install?.run).toContain('npm install --prefix "$prefix"');
+    expect(install?.run).toContain('"sanity-schema-impact@$CLI_VERSION"');
+    expect(install?.run).not.toContain('pnpm');
+  });
+
+  it('runs the CLI from the install step output and never from the action directory', () => {
+    const check = action.steps.find((step) => step.name === 'Run the schema impact check');
+    const comment = action.steps.find((step) => step.name === 'Comment on the pull request');
+
+    for (const step of [check, comment]) {
+      expect(step?.env['CLI'], step?.name).toBe('${{ steps.install.outputs.cli }}');
+      expect(step?.run, step?.name).not.toContain('dist/cli.js');
+    }
   });
 
   it('passes the pull request head commit through the step environment', () => {

@@ -1,6 +1,6 @@
 import { execFile, spawn } from 'node:child_process';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
@@ -10,9 +10,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { parseActionFile, type ActionStep } from './parse-action.js';
 
 /**
- * Runs the shell steps of action.yml offline. Three things are replaced: the build step (it
- * needs the registry), the setup-node `uses:` step, and the check itself (it needs live Sanity
- * access). The check is answered by a launcher that records its arguments. The comment
+ * Runs the shell steps of action.yml offline. Three things are replaced: the install step (it
+ * needs the npm registry), the setup-node `uses:` step, and the check itself (it needs live Sanity
+ * access). The install step's output points at a launcher in the place npm would have put the
+ * binary. The check is answered by that launcher, which records its arguments. The comment
  * subcommand runs the real source through tsx, and its API calls go to a local HTTP server.
  */
 
@@ -20,7 +21,7 @@ const run = promisify(execFile);
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const actionText = await readFileText(join(repoRoot, 'action.yml'));
 const action = parseActionFile(actionText);
-const SKIPPED_BY_TEST = new Set(['Build the schema impact CLI']);
+const INSTALL_STEP = 'Install the schema impact CLI';
 const TOKEN_GATE = 'sanity-viewer-token-for-test';
 const RUNNER_TOKEN = 'github-runner-token-for-test';
 const REPORT = '<!-- sanity-schema-impact -->\n## Schema impact\n\nNo schema changes found.\n';
@@ -45,7 +46,6 @@ let apiRequests: ApiRequest[];
 let existingComments: { id: number; body: string }[];
 let scratch: string;
 let workspace: string;
-let actionDir: string;
 let runCount = 0;
 
 beforeAll(async () => {
@@ -72,11 +72,6 @@ beforeAll(async () => {
   await run('git', ['clone', '-q', '--bare', seed, origin]);
   workspace = join(scratch, 'workspace');
   await run('git', ['clone', '-q', '--depth', '1', `file://${origin}`, workspace]);
-
-  actionDir = join(scratch, 'action');
-  await mkdir(join(actionDir, 'dist'), { recursive: true });
-  await writeFile(join(actionDir, 'package.json'), '{"type":"module"}\n');
-  await writeFile(join(actionDir, 'dist', 'cli.js'), launcherSource());
 
   server = createServer((request, response) => {
     void handleApi(request, response);
@@ -107,7 +102,8 @@ beforeEach(() => {
 
 function launcherSource(): string {
   const cliSource = pathToFileURL(join(repoRoot, 'src', 'cli.ts')).href;
-  return `import { appendFileSync } from 'node:fs';
+  return `#!${process.execPath}
+import { appendFileSync } from 'node:fs';
 const args = process.argv.slice(2);
 if (args[0] === 'comment') {
   await import(${JSON.stringify(cliSource)});
@@ -117,6 +113,17 @@ if (args[0] === 'comment') {
   process.exitCode = Number(process.env.STUB_CHECK_EXIT ?? '0');
 }
 `;
+}
+
+/** Puts the launcher where `npm install --prefix` would leave the binary, and returns its path. */
+async function writeLauncher(temp: string): Promise<string> {
+  const prefix = join(temp, 'schema-impact-cli');
+  const cli = join(prefix, 'node_modules', '.bin', 'sanity-schema-impact');
+  await mkdir(dirname(cli), { recursive: true });
+  await writeFile(join(prefix, 'package.json'), '{"type":"module"}\n');
+  await writeFile(cli, launcherSource());
+  await chmod(cli, 0o755);
+  return cli;
 }
 
 async function handleApi(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -260,7 +267,6 @@ async function runAction(scenario: Scenario): Promise<Outcome> {
     PATH: `${dirname(process.execPath)}:${process.env['PATH'] ?? ''}`,
     HOME: process.env['HOME'] ?? '',
     NODE_OPTIONS: `--import=${pathToFileURL(tsxLoader).href}`,
-    GITHUB_ACTION_PATH: actionDir,
     GITHUB_WORKSPACE: workspace,
     GITHUB_EVENT_NAME: scenario.event,
     GITHUB_EVENT_PATH: eventFile,
@@ -290,12 +296,14 @@ async function runAction(scenario: Scenario): Promise<Outcome> {
       skip('uses');
       continue;
     }
-    if (SKIPPED_BY_TEST.has(step.name)) {
-      skip('registry');
-      continue;
-    }
     if (!holds(step.if, scope)) {
       skip('if');
+      continue;
+    }
+    if (step.name === INSTALL_STEP) {
+      const cli = await writeLauncher(temp);
+      if (step.id !== undefined) scope.steps[step.id] = { outputs: { cli } };
+      skip('registry');
       continue;
     }
 

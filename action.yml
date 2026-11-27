@@ -93,16 +93,19 @@ runs:
         echo "ref=origin/$branch" >> "$GITHUB_OUTPUT"
         echo "name=$branch" >> "$GITHUB_OUTPUT"
 
-    - name: Build the schema impact CLI
+    - name: Install the schema impact CLI
+      id: install
       if: steps.gate.outputs.run == 'true'
       shell: bash
+      env:
+        # Must match the version in package.json. test/action/action-file.test.ts checks it.
+        CLI_VERSION: 0.1.0
       run: |
         set -eu
-        cd "$GITHUB_ACTION_PATH"
-        corepack enable
-        # The action's own repository also holds the fixture Studio. Only the root package is needed here.
-        pnpm install --frozen-lockfile --filter sanity-schema-impact
-        pnpm build
+        # Installed outside the repository, so the user's lockfile and node_modules are not touched.
+        prefix="$RUNNER_TEMP/schema-impact-cli"
+        npm install --prefix "$prefix" --no-save --no-audit --no-fund "sanity-schema-impact@$CLI_VERSION"
+        echo "cli=$prefix/node_modules/.bin/sanity-schema-impact" >> "$GITHUB_OUTPUT"
 
     - name: Install Studio dependencies
       if: steps.gate.outputs.run == 'true' && inputs.install == 'true'
@@ -114,6 +117,7 @@ runs:
       if: steps.gate.outputs.run == 'true'
       shell: bash
       env:
+        CLI: ${{ steps.install.outputs.cli }}
         BASE_REF: ${{ steps.base.outputs.ref }}
         BASE_NAME: ${{ steps.base.outputs.name }}
         HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -139,7 +143,7 @@ runs:
         fi
         # The exit code is read below, after the report is saved, so a failing rule doesn't stop the steps after it.
         set +e
-        node "$GITHUB_ACTION_PATH/dist/cli.js" "${args[@]}" > "$RUNNER_TEMP/schema-impact.md"
+        "$CLI" "${args[@]}" > "$RUNNER_TEMP/schema-impact.md"
         code=$?
         set -e
         echo "code=$code" >> "$GITHUB_OUTPUT"
@@ -161,6 +165,7 @@ runs:
       continue-on-error: true
       shell: bash
       env:
+        CLI: ${{ steps.install.outputs.cli }}
         GITHUB_TOKEN: ${{ inputs.github-token }}
       run: |
         set -eu
@@ -169,7 +174,7 @@ runs:
           echo "::warning::No report to comment with."
           exit 0
         fi
-        node "$GITHUB_ACTION_PATH/dist/cli.js" comment --file "$report"
+        "$CLI" comment --file "$report"
 
     - name: Exit with the check result
       if: steps.gate.outputs.run == 'true'
