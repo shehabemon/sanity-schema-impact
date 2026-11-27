@@ -44,3 +44,38 @@ Three bugs turned up when I ran the CLI against a real Studio for the first time
 ## Not a bug
 
 - The extract lists `media.tag` as a document type. The media plugin registers it as one, so the extract is right to include it.
+
+## Second run: report noise
+
+A second run against the same Studio, with about 6,000 documents. Each run compared `main` with one uncommitted schema edit.
+
+- **Page run:** removed `page.dynamicRoute`, added a required text field `page.summary`, and made `page.body` required.
+- **Product run:** removed `product.seo` and made `product.body` required. `shop` embeds `product` inline in an array, so the same two edits also show under `shop.products[]`.
+
+### 4. Unrelated text fields were reported as a rename
+
+- **Symptom:** `page.dynamicRoute` was shown as possibly renamed to `page.summary`, with "4 published documents still use the old name". The Studio also flagged those four as unknown fields.
+- **Cause:** Rename detection paired any removed and added field that had the same parent and shape. Two plain text fields have the same shape, so the names were never compared.
+- **Fix:** For plain text, number and boolean fields, the names must share a word. Decision 101.
+
+### 5. A required field was reported twice
+
+- **Symptom:** `product.body` appeared as "adds problems in 125 published documents (7 drafts)", and the validation table repeated it as a `Required` row with the same counts.
+- **Cause:** The Studio reports each empty document as `value.required`, and the structure row already said the same thing.
+- **Fix:** The Required group folds onto the newly-required row, and the row says whether the Studio's count matches. Required groups on a child path, such as `slug.current` under `slug`, fold onto the parent's row too. Decision 99. I checked the marker on a scratch copy of the fixture Studio with `required()` added to `post.slug`, so the dataset was never written. There the `slug` and `slug.current` groups both had 16 documents, and the row reads "Studio flags the same documents" with no validation row left.
+
+### 6. Rows with no documents took up most of the comment
+
+- **Symptom:** The product run's zero rows (`product.seo`, and `shop.products[].body` and `shop.products[].seo`) said "no existing documents affected", in the same table as the rows that touch content.
+- **Cause:** `shop` embeds `product` inline in an array, so every product edit repeats under `shop.products[]`. Those repeats have no documents of their own. The Markdown listed every change in one table, in path order.
+- **Fix:** Counted rows with no documents go into a collapsed block below the table. This is what made the collapsed block worth doing. Decision 100.
+
+### 7. Validation counts were worded differently from structure rows
+
+- **Symptom:** The same fact read "125 published documents (7 drafts)" in one table and "125 published, 7 drafts, 0 in releases" in the other.
+- **Fix:** One helper writes both. Decision 98.
+
+### 8. Unmeasured rows didn't say which change they were
+
+- **Symptom:** With both edits in place, and the rename no longer paired, the added `page.summary` field showed as `Not measured: adding a field changes no existing document`, with no field name, in the main table.
+- **Fix:** Every row now names its change first. Changes that can't touch documents go in the collapsed block. Decision 102.

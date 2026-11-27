@@ -585,3 +585,33 @@ Short entries: context, choice, trade-off. Newest at the bottom.
 - **Context:** A Studio can need a variable that isn't in the child process's environment (entry 74). Passing the whole environment would give Studio code the Sanity and GitHub tokens.
 - **Choice:** `--pass-env NAME[,NAME]` copies the named values into both the extract and the validate child. Only names starting with `SANITY_STUDIO_` are accepted. The CLI refuses other names when it parses the arguments, and the adapter checks again before it builds a child's environment. A rejected value is not echoed, because a mistyped argument could hold a token. A name that is set nowhere is an error. The Action passes its `pass-env` input through `env:`.
 - **Trade-off:** The rule is a naming convention. A token stored under a `SANITY_STUDIO_*` name would reach Studio code, and the flag can't tell it apart from a setting.
+
+## 98. Validation groups use the same document wording as the structure rows
+
+- **Context:** The validation table wrote "125 published, 7 drafts, 0 in releases", while the structure rows wrote "125 published documents (7 drafts)". One fact had two spellings, and the zero parts added noise.
+- **Choice:** `documentsPhrase` in `describe.ts` builds the count for both. Drafts and releases appear in brackets only when they are above zero. The Markdown and terminal tables both call it, so there is one copy of the wording.
+- **Trade-off:** A group with no published documents reads "0 published documents (7 drafts)". I kept the published count so the phrase always starts the same way.
+
+## 99. Required groups fold onto their newly required row
+
+- **Context:** Making a field required makes the Studio report `value.required` with the message `Required` on every empty document. The fixture Studio, with `required()` added to `post.slug` in a scratch copy (the dataset was not written), gave two groups at level error: one at `slug` and one at `slug.current`, 16 published documents each. Sanity v3 sends code `''` and the message `Required` alone. The row already says the same thing, so the table repeated it.
+- **Choice:** A required group folds onto a newly-required row when its document type matches and its path is the change's path, or starts with the change's path and a dot (`slug.current` under `slug`). An exact match wins over a child match. The fold code is shared with the unknown-field fold: `foldGroups` takes a list of kinds to hide. Required groups on one row cover the same documents, so the row takes the largest count, not the sum. Unknown-field folding stays exact and sums. The row's note is "Studio flags the same documents" when the Studio's count matches the row, and "Studio flags N documents" when it doesn't. `--fail-on` still counts folded Required groups, so hiding one doesn't stop `validation-error` from matching. The JSON keeps every raw group.
+- **Trade-off:** A child group is hidden even if it is a separate problem under a field that became required. Taking the largest count can understate the Studio's documents when the children flag different ones. GROQ's `defined()` treats `""` and `[]` as set, while the Studio treats them as missing, so the counts can differ. The note shows that difference.
+
+## 100. Rows with no documents are collapsed in the Markdown comment
+
+- **Context:** After the second run, most of the structure table was "no existing documents affected" rows, and they pushed the changes that touch content further down the PR comment.
+- **Choice:** In the Markdown, a counted row with no documents and no Studio flag goes into a collapsed `<details>` block after the main table. If every row is like that, the table stays as it was. The terminal table lists the rows with documents first and keeps the existing order within each group. A change whose query failed is always shown, because it wasn't counted. Entry 102 covers changes that are never measured.
+- **Trade-off:** A removed field with no data is easy to miss, although it is still in the block. The JSON output doesn't change.
+
+## 101. Plain scalar renames need a shared name word
+
+- **Context:** Rename detection pairs one removed and one added field with the same parent and shape (entry 27). Two unrelated text fields, `dynamicRoute` and `summary`, were reported as a rename, and the report said that four documents "still use the old name".
+- **Choice:** For text, number and boolean fields with no option list, the last path segment of both names must share a word. Words are split on camelCase, underscores and dashes, and compared in lower case. Other shapes, such as images, references, objects and option lists, keep the old rule. The existing image rename fixture still passes.
+- **Trade-off:** A real rename between plain text fields that share no word, such as `title` to `headline`, is now reported as a removal and an addition. That reads as data left behind, which is the safer message for a plain string.
+
+## 102. Unmeasured rows name their change
+
+- **Context:** The re-run printed `Not measured: adding a field changes no existing document` with no field name, so the row told the reader nothing. It also stayed in the main table, because skipped rows were always shown.
+- **Choice:** Every row starts with what the change does, measured or not (``Adding `page.summary`: not measured, …``). Changes that can't touch existing documents, such as an added field, a relaxed required flag or an option list that only grows, count as quiet rows and go in the collapsed block. A change whose query failed stays in the main table.
+- **Trade-off:** An added field now sits in the collapsed block, even though a reviewer may want to see it. It's still listed, and the JSON output is unchanged.
