@@ -645,3 +645,9 @@ Short entries: context, choice, trade-off. Newest at the bottom.
 - **Context:** `schema-impact.yml` runs the local action with `uses: ./`. With entry 103 it installs the pinned version from npm, which doesn't exist until 0.1.0 is published.
 - **Choice:** I left the workflow unchanged. The npm release comes before any pull request that touches the paths the workflow watches. A separate input to build from source would add a second route through the Action, and nothing else would exercise it.
 - **Trade-off:** Until 0.1.0 is on npm, a pull request that touches `src/`, `action.yml` or the workflow fails its dogfood check. The workflow runs only on pull requests, so main is not affected.
+
+## 108. Releases publish from CI with trusted publishing
+
+- **Context:** 0.1.0 was published from my laptop with a one-time password, and it has no provenance (entry 105). npm can trust a GitHub Actions workflow directly over OIDC, so a release needs no npm token stored in the repository.
+- **Choice:** `.github/workflows/release.yml` runs on a version tag. It checks that the tag matches `package.json`, runs typecheck, lint, tests and the build, and runs `npm publish`. Only that job gets `id-token: write`. npm links the package to this repository and to `release.yml` by name, and adds provenance on its own because both the repository and the package are public. Prerelease tags publish to `next`, so `latest` never points at a beta. The workflow doesn't move the `v0` tag. That stays a manual step after the publish passes, so the job never needs write access to the repository.
+- **Trade-off:** Renaming the workflow file breaks publishing until the npm setting is changed too. A tag is pushed before its npm version exists, so for about a minute `@v0.2.0` points at a CLI version that isn't on npm yet. `@v0` isn't affected, because it moves only after the publish.
