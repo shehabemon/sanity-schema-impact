@@ -140,7 +140,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: shehabemon/sanity-schema-impact@v0 # pin a full commit SHA in production
+      - uses: shehabemon/sanity-schema-impact@v0.1.0-beta.1 # pin a full commit SHA in production
         env:
           SANITY_AUTH_TOKEN: ${{ secrets.SANITY_AUTH_TOKEN }}
           SANITY_STUDIO_PROJECT_ID: ${{ vars.SANITY_PROJECT_ID }}
@@ -154,7 +154,7 @@ jobs:
 - `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET` are optional. The CLI reads them when `--project` and `--dataset` aren't given.
 - The Sanity values come from `env:`, not `with:`, so the token never appears in a workflow input.
 - The check needs the Studio's dependencies installed. Either set `install: 'true'` (runs `pnpm install --frozen-lockfile` at the repository root) or install them in an earlier step.
-- Pin a full commit SHA in production (`uses: shehabemon/sanity-schema-impact@<sha> # v0.x.y`). `@v0` is a placeholder until the first release.
+- Pin a full commit SHA in production (`uses: shehabemon/sanity-schema-impact@<sha> # v0.x.y`). Releases are tagged `v0.x.y`; the current one is the beta `v0.1.0-beta.1`.
 - The action builds the CLI from its own source on each run, with Node 22 and pnpm. The npm release will replace that with a pinned `npx` call. That build installs only the CLI's own dependencies, not the fixture Studio's.
 - On a pull request the report names the pull request's branch and head commit. The checkout is the merge commit, so the report doesn't show that SHA.
 
