@@ -11,6 +11,13 @@ const packageJson = JSON.parse(
 ) as { version: string };
 
 describe('action.yml', () => {
+  it('keeps the description under the Marketplace limit of 125 characters', () => {
+    const description = /^description: (.+)$/m.exec(text)?.[1] ?? '';
+
+    expect(description).not.toBe('');
+    expect(description.length).toBeLessThan(125);
+  });
+
   it('declares the inputs with the defaults the README documents', () => {
     const defaults = Object.fromEntries(action.inputs.map((input) => [input.name, input.default]));
 

@@ -1,5 +1,5 @@
 name: Sanity schema impact
-description: Shows how a Sanity schema change affects the content already in the dataset, and keeps one comment on the pull request up to date.
+description: Shows how a Sanity schema change affects the content already in your dataset, in one comment on each pull request.
 branding:
   icon: database
   color: red
