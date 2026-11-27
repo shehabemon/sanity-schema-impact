@@ -93,7 +93,7 @@ Run the CLI from a checkout of the branch you want to check. `--studio` is the S
 npx sanity-schema-impact --studio ./studio --base main
 ```
 
-Requirements: Node 22.12 or newer, and the Studio's dependencies installed. In a workspace the `sanity` binary sits in the root's `node_modules`, and the CLI looks for it there too.
+Requirements: Node 22.12 or newer, Sanity 3.33 or newer in the Studio (the first release with `sanity schema extract`), and the Studio's dependencies installed. In a workspace the `sanity` binary sits in the root's `node_modules`, and the CLI looks for it there too.
 
 It needs a Viewer token in `SANITY_AUTH_TOKEN`, and a project and dataset from `--project` and `--dataset` or from `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET`. Locally, Node's `--env-file` flag is enough: `node --env-file=.env ./node_modules/.bin/sanity-schema-impact --studio ./studio`.
 
@@ -120,7 +120,7 @@ Exit codes: 0 when no rule matched, 1 when one did, 2 for a usage or runtime err
 
 ### Migration scaffolds
 
-With `--migrations`, the CLI writes one migration for each change that still has documents. Each one is a folder under `<studio>/migrations`, the place `sanity migrations run` looks:
+With `--migrations`, the CLI writes one migration for each change that still has documents. Each one is a folder under `<studio>/migrations`, the place the Sanity CLI looks for migrations:
 
 - Removed field: unsets the field on every document that has it.
 - Possible rename: copies the value to the new field, then unsets the old one. A document that already has a value in the new field is left alone, so nothing is dropped.
@@ -135,6 +135,8 @@ sanity migrations run unset-post-featured-image --project <id> --dataset <name>
 sanity migrations run unset-post-featured-image --project <id> --dataset <name> --no-dry-run
 ```
 
+On Sanity v3 the command is `sanity migration run`, singular. The flags are the same.
+
 The report on stdout doesn't change. The scaffold messages go to stderr.
 
 The head is the current checkout, including uncommitted Studio edits. The report shows the last commit's SHA, not a dirty marker. The base is a detached worktree at the base ref's commit. `NO_COLOR` turns off the table colours.
@@ -143,14 +145,16 @@ The head is the current checkout, including uncommitted Studio edits. The report
 
 The tool only reads, so it needs a Viewer token and nothing more. Never give it an editor or admin token.
 
-Create the token from the Studio folder with the Sanity CLI, logged in to the account that owns the project:
+Create it at manage.sanity.io, logged in to the account that owns the project: open the project, go to API, then Tokens, and add a token with the Viewer role. `sanity manage`, run from the Studio folder, opens the right page.
+
+On Sanity v4 and later you can also create it from the Studio folder with the Sanity CLI. Sanity v3 has no `tokens` command.
 
 ```bash
 cd studio
 pnpm exec sanity tokens add "schema impact" --role viewer
 ```
 
-Add `-p <projectId>` if the Studio's Sanity config doesn't name the project. You can also create it at manage.sanity.io: open the project, go to API, then Tokens, and add a token with the Viewer role.
+Add `-p <projectId>` if the Studio's Sanity config doesn't name the project.
 
 Store the token as a repository secret named `SANITY_AUTH_TOKEN`. Optionally, store the project ID and dataset as repository variables (`SANITY_PROJECT_ID` and `SANITY_DATASET`) and map them to the `SANITY_STUDIO_*` variables, as in the example above.
 
