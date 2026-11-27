@@ -1,0 +1,80 @@
+name: Release
+
+# Publishes to npm when a version tag is pushed. npm trusts this workflow by its file name
+# (trusted publishing), so there is no npm token in the repository, and the package gets a
+# provenance statement that links it to this commit.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: pnpm/action-setup@v6.1.1
+
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24.x
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      - name: Check the tag matches the package version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          version=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::Tag $TAG does not match package.json version $version."
+            exit 1
+          fi
+
+      - name: Check the npm version
+        run: |
+          set -eu
+          # Trusted publishing needs npm 11.5.1 or later.
+          node -e "
+            const [major, minor, patch] = process.argv[1].split('.').map(Number);
+            const ok = major > 11 || (major === 11 && (minor > 5 || (minor === 5 && patch >= 1)));
+            if (!ok) { console.error('npm ' + process.argv[1] + ' is too old for trusted publishing'); process.exit(1); }
+          " "$(npm --version)"
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
+
+      - name: Publish
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -eu
+          # A prerelease such as v0.2.0-beta.1 goes to the next tag, so latest stays on a stable version.
+          dist_tag=latest
+          case "$TAG" in
+            *-*) dist_tag=next ;;
+          esac
+          # The checks above already ran, so prepublishOnly is skipped.
+          npm publish --ignore-scripts --tag "$dist_tag"

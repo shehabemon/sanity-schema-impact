@@ -65,6 +65,13 @@ CI runs the integration tests in an `integration` job, only on pushes to `main` 
 
 The version lives in three places, and they must match: `version` in `package.json`, `VERSION` in `src/version.ts`, and `CLI_VERSION` in the install step of `action.yml`. `test/smoke.test.ts` and `test/action/action-file.test.ts` fail when the first two or the last one drift apart. The Action installs the CLI from npm at `CLI_VERSION`, so publish the npm release before moving the Action's tag.
 
+Releases are published by `.github/workflows/release.yml`, not from a laptop. npm trusts that workflow by its file name, so the repository holds no npm token, and each version gets a provenance statement.
+
+1. Bump the version in the three places above, commit, and push to `main`. Wait for CI.
+2. Tag the commit and push the tag: `git tag -a v0.2.0 -m "0.2.0" && git push origin v0.2.0`.
+3. The Release workflow checks that the tag matches `package.json`, runs the checks, and publishes. A tag with a prerelease part, such as `v0.2.0-beta.1`, goes to the `next` dist-tag.
+4. After it passes, move the `v0` tag to the same commit (`git tag -f -a v0 -m "Latest 0.x release (0.2.0)" && git push -f origin v0`) and publish the GitHub release.
+
 ## Layout
 
 - `src/` the tool (diff, impact, validation, report, adapters, cli)
