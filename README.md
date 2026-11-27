@@ -1,19 +1,103 @@
 # sanity-schema-impact
 
-Shows, on every pull request, how a Sanity schema change affects content that already exists in the dataset. Work in progress.
+Sanity schemas live in code, and content lives in the Content Lake. Changing the schema never changes the documents that already exist. Removed fields keep their data, removed types leave documents Studio can't show, and new validation rules fail on old documents without any warning. `sanity documents validate` checks a dataset against the current schema only. It doesn't compare two schemas, and it isn't meant to run on every pull request.
 
-## Usage
+sanity-schema-impact runs on each pull request and reports what the change does to the content already in the dataset. It diffs the base and head schemas, counts the documents each change affects (drafts and release versions included), and lists the validation problems the change introduces.
+
+## Example comment
+
+The action posts this as one comment on the pull request, and updates it on each push:
+
+```markdown
+## Schema impact
+
+`main` (`a1b2c3d`) to `schema/post-cleanup` (`f9e8d7c`), project `abc123xy`, dataset `production`.
+
+### Structure
+
+| Schema change                                                                    |
+| -------------------------------------------------------------------------------- |
+| Deleting type `category` orphans 58 published documents                          |
+| Removing `post.featuredImage` leaves data in 340 published documents (12 drafts) |
+| Making `post.slug` required adds problems in 12 published documents              |
+
+### Validation
+
+No new validation problems.
+
+### Result
+
+Failed rules: `data-loss`, `newly-required`.
+```
+
+## Quick start: GitHub Action
+
+Add a workflow to the repository. The check needs a Viewer token (see [Token setup](#token-setup)) and the path to your Studio.
+
+```yaml
+name: Schema impact
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  schema-impact:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: shehabemon/sanity-schema-impact@v0
+        env:
+          SANITY_AUTH_TOKEN: ${{ secrets.SANITY_AUTH_TOKEN }}
+          SANITY_STUDIO_PROJECT_ID: ${{ vars.SANITY_PROJECT_ID }}
+          SANITY_STUDIO_DATASET: ${{ vars.SANITY_DATASET }}
+        with:
+          studio: studio
+          install: 'true'
+```
+
+- `SANITY_AUTH_TOKEN` is a Viewer token, stored as a repository secret. It is required.
+- `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET` are optional. The CLI reads them when `--project` and `--dataset` aren't given.
+- The Sanity values come from `env:`, not `with:`, so the token never appears in a workflow input.
+- The check needs the Studio's dependencies installed. Either set `install: 'true'` (runs `pnpm install --frozen-lockfile` at the repository root, pnpm only) or install them in an earlier step.
+- The action fetches the base branch tip itself, so a default `actions/checkout` is enough.
+- The action installs `sanity-schema-impact` from npm, at the version of the action you use. It doesn't install the Studio's dependencies.
+- Pin a full commit SHA in production (`uses: shehabemon/sanity-schema-impact@<sha> # v0.1.0`). Releases are tagged `v0.x.y`.
+- On a pull request the report names the pull request's branch and head commit. The checkout is the merge commit, so the report doesn't show that SHA.
+
+| Input             | Default               | Meaning                                                                                                     |
+| ----------------- | --------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `studio`          | required              | Studio directory inside the repository.                                                                     |
+| `base`            | `''`                  | Branch to compare with. Empty means the pull request's base branch, or `main` outside pull requests.        |
+| `fail-on`         | `''`                  | Rules that fail the step, as in the CLI. Empty uses the CLI defaults.                                       |
+| `skip-validation` | `false`               | Skip the validation diff.                                                                                   |
+| `install`         | `false`               | Run `pnpm install --frozen-lockfile` at the repository root before the check. pnpm only.                    |
+| `pass-env`        | `''`                  | `SANITY_STUDIO_*` variables for the Studio's Sanity processes, as in `--pass-env`. Other names are refused. |
+| `comment`         | `true`                | Create or update the pull request comment. Only on `pull_request` events.                                   |
+| `github-token`    | `${{ github.token }}` | Token for the comment. Needs `pull-requests: write`.                                                        |
+
+The step exits with the CLI's exit code, so `fail-on` decides whether the check fails. A comment that can't be posted is reported as a failed step, and it doesn't hide the check's result.
+
+The comment is found by its first line, `<!-- sanity-schema-impact -->`, and updated in place. GitHub caps a comment at 65,536 characters. A longer report is cut at a line break, with a note that the full report is in the job summary.
+
+The report is also written to the job summary. The comment can be posted from any shell with `sanity-schema-impact comment --file report.md`. It reads `GITHUB_TOKEN`, `GITHUB_REPOSITORY`, `GITHUB_EVENT_PATH` and `GITHUB_API_URL`. Outside a pull request event it warns and exits 0.
+
+## Quick start: CLI
 
 Run the CLI from a checkout of the branch you want to check. `--studio` is the Studio directory inside the repo, and `--base` is the ref to compare with (default `main`):
 
 ```bash
-npm install                        # or pnpm/yarn: the Studio's dependencies must be installed
-sanity-schema-impact --studio ./studio --base main
+npx sanity-schema-impact --studio ./studio --base main
 ```
 
-It needs a Viewer token in `SANITY_AUTH_TOKEN`, and a project and dataset from `--project` and `--dataset` or from `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET`. Locally, Node's `--env-file` flag is enough: `node --env-file=.env dist/cli.js --studio ./fixtures/studio`.
+Requirements: Node 22.12 or newer, and the Studio's dependencies installed. In a workspace the `sanity` binary sits in the root's `node_modules`, and the CLI looks for it there too.
 
-In an npm or yarn workspace the `sanity` binary sits in the repository root's `node_modules`, and the CLI looks for it there too. The base is checked out as a git worktree, which has none of the head's untracked files. So the CLI links the head's `node_modules` folders and its `.env` files into the base for the run, and removes the links afterwards. A variable the Studio reads at load time that the CLI doesn't set has to be named with `--pass-env`.
+It needs a Viewer token in `SANITY_AUTH_TOKEN`, and a project and dataset from `--project` and `--dataset` or from `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET`. Locally, Node's `--env-file` flag is enough: `node --env-file=.env ./node_modules/.bin/sanity-schema-impact --studio ./studio`.
+
+The base is checked out as a git worktree, which has none of the head's untracked files. So the CLI links the head's `node_modules` folders and its `.env` files into the base for the run, and removes the links afterwards. A variable the Studio reads at load time that the CLI doesn't set has to be named with `--pass-env`.
 
 | Option                   | Meaning                                                                                                       |
 | ------------------------ | ------------------------------------------------------------------------------------------------------------- |
@@ -34,7 +118,7 @@ Rules: `data-loss` (a removed field or type still has documents), `newly-require
 
 Exit codes: 0 when no rule matched, 1 when one did, 2 for a usage or runtime error.
 
-## Migration scaffolds
+### Migration scaffolds
 
 With `--migrations`, the CLI writes one migration for each change that still has documents. Each one is a folder under `<studio>/migrations`, the place `sanity migrations run` looks:
 
@@ -55,133 +139,40 @@ The report on stdout doesn't change. The scaffold messages go to stderr.
 
 The head is the current checkout, including uncommitted Studio edits. The report shows the last commit's SHA, not a dirty marker. The base is a detached worktree at the base ref's commit. `NO_COLOR` turns off the table colours.
 
-## Development setup
+## Token setup
 
-Requirements: Node 22.12 or newer (see `.nvmrc`) and pnpm 12 (pinned in `package.json`).
+The tool only reads, so it needs a Viewer token and nothing more. Never give it an editor or admin token.
+
+Create the token from the Studio folder with the Sanity CLI, logged in to the account that owns the project:
 
 ```bash
-pnpm install
-pnpm typecheck
-pnpm lint
-pnpm format:check
-pnpm test
-pnpm test:integration  # needs SANITY_AUTH_TOKEN and the fixture variables, skips without them
-pnpm build
-pnpm seed --dry-run    # offline: prints fixture counts only
+cd studio
+pnpm exec sanity tokens add "schema impact" --role viewer
 ```
 
-### Environment variables
+Add `-p <projectId>` if the Studio's Sanity config doesn't name the project. You can also create it at manage.sanity.io: open the project, go to API, then Tokens, and add a token with the Viewer role.
 
-| Variable                   | Used by               | Notes                                                  |
-| -------------------------- | --------------------- | ------------------------------------------------------ |
-| `SANITY_STUDIO_PROJECT_ID` | Studio, seed          | Project ID of the fixture project.                     |
-| `SANITY_STUDIO_DATASET`    | Studio, seed          | Must start with `fixture` for seeding.                 |
-| `SANITY_SEED_TOKEN`        | seed only             | Editor token for the fixture project. Never commit it. |
-| `SANITY_AUTH_TOKEN`        | the tool, integration | Viewer token. The only token the tool reads.           |
+Store the token as a repository secret named `SANITY_AUTH_TOKEN`. Optionally, store the project ID and dataset as repository variables (`SANITY_PROJECT_ID` and `SANITY_DATASET`) and map them to the `SANITY_STUDIO_*` variables, as in the example above.
 
-Copy values into a local `.env` file at the repo root, or export them in your shell. `.env*` is git-ignored.
-`pnpm seed` loads `.env` itself through Node's `--env-file-if-exists` flag (Node 22.9+, so 22.12+ is fine). A missing `.env` is not an error. Never commit `.env`.
+## Security
 
-### Creating the fixture project and seeding it
+- The validation diff runs `sanity documents validate` from the Studio's own `node_modules`. Custom validators in the Studio run inside that process, with the token in its environment. Use a dedicated Viewer token for this tool. A Viewer token can't write to the dataset, even if a validator tries.
+- Pull requests from forks don't receive secrets. The action then prints a warning, the check is skipped, and the job passes.
+- Never use `pull_request_target`. That event runs the workflow with the secrets while it checks out code from the pull request, and the Studio runs that code during the check. Use `pull_request`, where forks get no secrets.
+- The tool is read-only. It never writes to a dataset, and migration scaffolds are files that you review and run yourself.
+- The token is read from `SANITY_AUTH_TOKEN` and is never printed in a report or a log.
 
-1. Create a Sanity project at sanity.io/manage, for example named `schema-impact-fixture`.
-2. Add a dataset named `fixture-dev`. The name must start with `fixture`, or the seed script refuses to run.
-3. In the project's API settings, create an Editor token for this project only. Copy it once.
-4. Export the variables:
-   ```bash
-   export SANITY_STUDIO_PROJECT_ID=<your project id>
-   export SANITY_STUDIO_DATASET=fixture-dev
-   export SANITY_SEED_TOKEN=<the Editor token>
-   ```
-5. Seed the dataset. It is safe to re-run. Add `--reset` to delete the fixture documents first:
+## Limitations
 
-   ```bash
-   pnpm seed            # or: pnpm seed --reset
-   ```
+- `sanity schema extract`, which the structural diff relies on, is marked experimental by Sanity. Its output may change between Sanity releases.
+- The extracted schema carries no validation rules except `required`. `min`, `max`, `regex`, custom validators, `deprecated` and `hidden` are absent, so rule changes are caught only by the validation diff.
+- `datetime`, `date`, `text` and `url` all extract as `string`, so a change between them isn't reported as a type change.
+- Rename detection is a heuristic. A removed and an added field with the same shape and a shared name word are reported as a possible rename.
+- Counts use GROQ `defined()`, which treats an empty string or an empty array as set. The Studio may treat them as missing, so the two counts can differ. The report shows that difference when it matters.
+- The validation diff runs the Studio twice, once for the base and once for the head, and each run takes about 8 seconds.
 
-   The seed also creates the release `rFixture01` with eight versions of published posts (`versions.rFixture01.*`). `--reset` deletes those versions but keeps the release document.
+## License
 
-   The seed first uploads four small solid-colour PNGs (generated in code by `fixtures/png.ts`). Sanity returns content-hashed asset IDs, and every image reference points at one of them, so the Content Lake accepts the strong references. Re-running uploads the same bytes and gets the same IDs. `pnpm seed --dry-run` makes no network calls and uses placeholder asset IDs.
+MIT. See [LICENSE](LICENSE).
 
-6. Optional: run the Studio locally with `cd fixtures/studio && pnpm exec sanity dev`. Log in to Sanity first if prompted.
-
-The fixture Studio schema can also be extracted without logging in:
-`cd fixtures/studio && pnpm exec sanity schema extract --enforce-required-fields`.
-
-### Integration tests
-
-`pnpm test:integration` runs `test/integration/impact.test.ts`, `test/integration/validation.test.ts` and `test/integration/migrations.test.ts` against the fixture dataset with `SANITY_AUTH_TOKEN` (Viewer). It loads `.env` itself, and skips every test unless `SANITY_AUTH_TOKEN`, `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET` are all set. `pnpm test` never runs it. The validation test copies the fixture Studio to a temp directory, adds a stricter title rule there, and never edits `fixtures/studio`. The migration test does the same copy, generates the scaffolds into it, type-checks them, and runs only `sanity migrations run --dry-run` against them.
-
-### Validation and Studio code
-
-The validation diff runs `sanity documents validate` from each Studio's own `node_modules`. Custom validators in the Studio run inside that process, with the token in its environment. So:
-
-- Use a dedicated Viewer token for this tool, never an editor or admin token.
-- Never run it from a `pull_request_target` workflow. That event gives the job secrets while it runs code from the pull request. Use `pull_request`, where forks get no secrets.
-
-CI runs it in an `integration` job, only on pushes to `main` and only after the main job passes. The job reads the repository secret `SANITY_AUTH_TOKEN` and the repository variables `SANITY_PROJECT_ID` and `SANITY_DATASET`. Until those exist, the tests skip and the job passes. Pull requests from forks don't receive secrets, so the job never runs for them.
-
-## GitHub Action
-
-The action runs the check on pull requests, writes the report to the job summary, and keeps one comment on the pull request up to date.
-
-```yaml
-name: Schema impact
-
-on:
-  pull_request:
-
-permissions:
-  contents: read
-  pull-requests: write
-
-jobs:
-  schema-impact:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: shehabemon/sanity-schema-impact@v0.1.0-beta.1 # pin a full commit SHA in production
-        env:
-          SANITY_AUTH_TOKEN: ${{ secrets.SANITY_AUTH_TOKEN }}
-          SANITY_STUDIO_PROJECT_ID: ${{ vars.SANITY_PROJECT_ID }}
-          SANITY_STUDIO_DATASET: ${{ vars.SANITY_DATASET }}
-        with:
-          studio: studio
-          install: 'true'
-```
-
-- `SANITY_AUTH_TOKEN` is a Viewer token, stored as a repository secret. It is required.
-- `SANITY_STUDIO_PROJECT_ID` and `SANITY_STUDIO_DATASET` are optional. The CLI reads them when `--project` and `--dataset` aren't given.
-- The Sanity values come from `env:`, not `with:`, so the token never appears in a workflow input.
-- The check needs the Studio's dependencies installed. Either set `install: 'true'` (runs `pnpm install --frozen-lockfile` at the repository root) or install them in an earlier step.
-- Pin a full commit SHA in production (`uses: shehabemon/sanity-schema-impact@<sha> # v0.x.y`). Releases are tagged `v0.x.y`; the current one is the beta `v0.1.0-beta.1`.
-- The action builds the CLI from its own source on each run, with Node 22 and pnpm. The npm release will replace that with a pinned `npx` call. That build installs only the CLI's own dependencies, not the fixture Studio's.
-- On a pull request the report names the pull request's branch and head commit. The checkout is the merge commit, so the report doesn't show that SHA.
-
-**Pull requests from forks** don't receive secrets. The action then prints a warning, the check is skipped, and the job passes.
-
-**Never use `pull_request_target`.** That event runs the workflow with the secrets while it checks out code from the pull request. The Studio runs its own code (custom validators) during the check, so a fork could read the token. Use `pull_request`.
-
-| Input             | Default               | Meaning                                                                                                     |
-| ----------------- | --------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `studio`          | required              | Studio directory inside the repository.                                                                     |
-| `base`            | `''`                  | Branch to compare with. Empty means the pull request's base branch, or `main` outside pull requests.        |
-| `fail-on`         | `''`                  | Rules that fail the step, as in the CLI. Empty uses the CLI defaults.                                       |
-| `skip-validation` | `false`               | Skip the validation diff.                                                                                   |
-| `install`         | `false`               | Run `pnpm install --frozen-lockfile` at the repository root before the check. pnpm only.                    |
-| `pass-env`        | `''`                  | `SANITY_STUDIO_*` variables for the Studio's Sanity processes, as in `--pass-env`. Other names are refused. |
-| `comment`         | `true`                | Create or update the pull request comment. Only on `pull_request` events.                                   |
-| `github-token`    | `${{ github.token }}` | Token for the comment. Needs `pull-requests: write`.                                                        |
-
-The step exits with the CLI's exit code, so `fail-on` decides whether the check fails. A comment that can't be posted is reported as a failed step, and it doesn't hide the check's result.
-
-The comment is found by its first line, `<!-- sanity-schema-impact -->`, and updated in place. GitHub caps a comment at 65,536 characters. A longer report is cut at a line break, with a note that the full report is in the job summary.
-
-The comment can also be posted from any shell: `sanity-schema-impact comment --file report.md`. It reads `GITHUB_TOKEN`, `GITHUB_REPOSITORY`, `GITHUB_EVENT_PATH` and `GITHUB_API_URL`. Outside a pull request event it warns and exits 0.
-
-## Layout
-
-- `src/` the tool (diff, impact, validation, report, adapters, cli)
-- `test/` Vitest tests and schema fixtures
-- `fixtures/` seed script, data generator and fixture Studio (`fixtures/studio`)
-- `docs/decisions.md` design decisions and trade-offs
+Contributor setup, the fixture Studio and the test layers are in [CONTRIBUTING.md](CONTRIBUTING.md).
