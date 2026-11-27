@@ -79,3 +79,12 @@ A second run against the same Studio, with about 6,000 documents. Each run compa
 
 - **Symptom:** With both edits in place, and the rename no longer paired, the added `page.summary` field showed as `Not measured: adding a field changes no existing document`, with no field name, in the main table.
 - **Fix:** Every row now names its change first. Changes that can't touch documents go in the collapsed block. Decision 102.
+
+## Third run: the Action from another repository
+
+- **Setup:** A private copy of the same repository. The workflow installs with `npm ci` and uses `shehabemon/sanity-schema-impact@v0.1.0-beta.1` with `studio: apps/sanity`. It passes `SANITY_STUDIO_ID`, `SANITY_STUDIO_DATASET` and `SANITY_STUDIO_TITLE` with `pass-env`, because the Studio's `.env` isn't in the repository. The token is a repository secret, and the project and dataset are repository variables.
+- **First push** (remove `page.dynamicRoute`, add a required `page.summary`): the comment matched the local run, and the step failed on `data-loss` and `validation-error`, as expected.
+- **Second push** (also require `product.body`): the same comment was updated in place, with the new head commit and the extra row.
+- **Timing:** about 2.5 minutes per run. `npm ci` for the whole workspace took 89 s, and the action took 53 s, including building the CLI.
+- **Token:** the job log masks it, and a search of the log for the token found nothing.
+- **Note:** a public repository can't use the action while the action's repository is private. GitHub only shares private actions with private repositories.
